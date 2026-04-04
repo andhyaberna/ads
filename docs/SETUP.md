@@ -80,6 +80,12 @@ Kebutuhan user:
    - `OPENAI_API_KEY`
    - `OPENAI_BASE_URL` (opsional)
    - `OPENAI_MODEL` (opsional)
+   - `GEMINI_API_KEY` (opsional)
+   - `GEMINI_BASE_URL` (opsional)
+   - `GEMINI_MODEL` (opsional)
+   - `CLAUDE_API_KEY` (opsional)
+   - `CLAUDE_BASE_URL` (opsional)
+   - `CLAUDE_MODEL` (opsional)
    - `SIGNATURE_MAX_SKEW_MS` (default 300000)
    - `NONCE_TTL_SEC` (default 600)
    - `AI_CACHE_TTL_SEC` (default 300)
@@ -104,10 +110,15 @@ Di tab **Settings** aplikasi:
 ### Konfigurasi AI Per User
 
 Di section **Konfigurasi AI Pribadi (Per User)**:
-- Pilih provider aktif: **OpenAI** atau **Gemini**
-- Isi API key provider masing-masing (boleh isi dua-duanya)
+- Pilih provider aktif: **Mode Bawaan**, **OpenAI**, **Gemini**, atau **Claude**
+- Isi API key provider masing-masing jika ingin memakai provider eksternal
 - Status key tampil sebagai indikator tersimpan/belum + masked value
 - Key tidak ditampilkan full lagi setelah disimpan
+
+Penting:
+- Semua API key bersifat **opsional (tidak wajib)**
+- Jika API key kosong atau provider eksternal tidak siap, sistem otomatis fallback ke **mode bawaan**
+- Fitur utama tetap berjalan normal tanpa API key eksternal
 
 Catatan:
 - Konfigurasi ini disimpan **per user** (User Properties), bukan global

@@ -7,13 +7,15 @@ function getSettingsMap_() {
 
 function getUserAiConfig_() {
   var props = PropertiesService.getUserProperties();
-  var provider = String(props.getProperty('AI_PROVIDER') || 'openai').toLowerCase();
+  var provider = String(props.getProperty('AI_PROVIDER') || 'builtin').toLowerCase();
   var openaiKey = props.getProperty('AI_OPENAI_KEY') || '';
   var geminiKey = props.getProperty('AI_GEMINI_KEY') || '';
+  var claudeKey = props.getProperty('AI_CLAUDE_KEY') || '';
   return {
-    provider: provider === 'gemini' ? 'gemini' : 'openai',
+    provider: normalizeProvider_(provider),
     openai_key: openaiKey,
-    gemini_key: geminiKey
+    gemini_key: geminiKey,
+    claude_key: claudeKey
   };
 }
 
@@ -23,24 +25,23 @@ function getUserAiConfigStatus_() {
     provider: c.provider,
     has_openai_key: !!c.openai_key,
     has_gemini_key: !!c.gemini_key,
+    has_claude_key: !!c.claude_key,
     openai_key_masked: maskApiKey_(c.openai_key),
-    gemini_key_masked: maskApiKey_(c.gemini_key)
+    gemini_key_masked: maskApiKey_(c.gemini_key),
+    claude_key_masked: maskApiKey_(c.claude_key)
   };
 }
 
 function saveUserAiConfig_(payload) {
   payload = payload || {};
-  var provider = String(payload.provider || '').toLowerCase();
+  var provider = normalizeProvider_(String(payload.provider || '').toLowerCase());
   var openaiInput = String(payload.openai_key || '').trim();
   var geminiInput = String(payload.gemini_key || '').trim();
+  var claudeInput = String(payload.claude_key || '').trim();
 
-  if (['openai', 'gemini'].indexOf(provider) < 0) {
-    return { ok: false, error: 'Provider harus openai atau gemini.' };
+  if (['builtin', 'openai', 'gemini', 'claude'].indexOf(provider) < 0) {
+    return { ok: false, error: 'Provider harus builtin/openai/gemini/claude.' };
   }
-
-  var current = getUserAiConfig_();
-  var nextOpenAiKey = openaiInput || current.openai_key;
-  var nextGeminiKey = geminiInput || current.gemini_key;
 
   if (openaiInput && !isOpenAiKeyLike_(openaiInput)) {
     return { ok: false, error: 'Format API key OpenAI terlihat tidak valid.' };
@@ -48,20 +49,22 @@ function saveUserAiConfig_(payload) {
   if (geminiInput && !isGeminiKeyLike_(geminiInput)) {
     return { ok: false, error: 'Format API key Gemini terlihat tidak valid.' };
   }
-
-  if (provider === 'openai' && !nextOpenAiKey) {
-    return { ok: false, error: 'API key OpenAI wajib diisi saat provider aktif OpenAI.' };
-  }
-  if (provider === 'gemini' && !nextGeminiKey) {
-    return { ok: false, error: 'API key Gemini wajib diisi saat provider aktif Gemini.' };
+  if (claudeInput && !isClaudeKeyLike_(claudeInput)) {
+    return { ok: false, error: 'Format API key Claude terlihat tidak valid.' };
   }
 
   var props = PropertiesService.getUserProperties();
   props.setProperty('AI_PROVIDER', provider);
   if (openaiInput) props.setProperty('AI_OPENAI_KEY', openaiInput);
   if (geminiInput) props.setProperty('AI_GEMINI_KEY', geminiInput);
+  if (claudeInput) props.setProperty('AI_CLAUDE_KEY', claudeInput);
 
   return { ok: true, config: getUserAiConfigStatus_() };
+}
+
+function normalizeProvider_(provider) {
+  if (provider === 'openai' || provider === 'gemini' || provider === 'claude' || provider === 'builtin') return provider;
+  return 'builtin';
 }
 
 function isOpenAiKeyLike_(key) {
@@ -70,6 +73,10 @@ function isOpenAiKeyLike_(key) {
 
 function isGeminiKeyLike_(key) {
   return /^AIza[0-9A-Za-z\-_]{20,}$/.test(String(key || ''));
+}
+
+function isClaudeKeyLike_(key) {
+  return /^sk-ant-[A-Za-z0-9\-_]{16,}$/.test(String(key || ''));
 }
 
 function maskApiKey_(key) {
@@ -101,26 +108,25 @@ function askAiByWorker_(question, snapshot) {
   var signingSecret = settings.WORKER_SIGNING_SECRET || workerToken;
   var aiMode = settings.AI_MODE || 'ad-analysis-mini';
   var userCfg = getUserAiConfig_();
-  var provider = userCfg.provider || 'openai';
-  var selectedApiKey = provider === 'gemini' ? userCfg.gemini_key : userCfg.openai_key;
+  var provider = userCfg.provider || 'builtin';
+  var selectedApiKey = provider === 'gemini'
+    ? userCfg.gemini_key
+    : provider === 'claude'
+      ? userCfg.claude_key
+      : provider === 'openai'
+        ? userCfg.openai_key
+        : '';
+
+  if (provider === 'builtin') {
+    return generateLocalAiFallbackAnswer_(question, snapshot, 'builtin');
+  }
 
   if (!workerUrl || !workerToken) {
-    return [
-      'Mode AI belum aktif.',
-      'Simpan WORKER_URL dan WORKER_TOKEN di Settings dulu.',
-      'Contoh pertanyaan:',
-      '- Ad mana yang harus dipause hari ini?',
-      '- Creative mana yang bisa discale sekarang?',
-      '- Di mana kebocoran budget terbesar?'
-    ].join('\n');
+    return generateLocalAiFallbackAnswer_(question, snapshot, 'worker_not_configured');
   }
 
   if (!selectedApiKey) {
-    return [
-      'Konfigurasi AI per-user belum lengkap.',
-      'Masuk ke Settings > Konfigurasi AI Pribadi, pilih provider aktif, lalu isi API key provider tersebut.',
-      'Provider aktif saat ini: ' + provider
-    ].join('\n');
+    return generateLocalAiFallbackAnswer_(question, snapshot, 'provider_key_missing_' + provider);
   }
 
   var compact = buildCompactSummaryForAi_(snapshot);
@@ -142,11 +148,74 @@ function askAiByWorker_(question, snapshot) {
   });
 
   if (res.getResponseCode() >= 300) {
-    return 'AI proxy error: ' + res.getResponseCode() + '\n' + res.getContentText();
+    return generateLocalAiFallbackAnswer_(question, snapshot, 'worker_http_' + res.getResponseCode());
   }
 
   var json = JSON.parse(res.getContentText() || '{}');
-  return json.answer || 'AI tidak mengembalikan jawaban.';
+  return json.answer || generateLocalAiFallbackAnswer_(question, snapshot, 'empty_ai_response');
+}
+
+function generateLocalAiFallbackAnswer_(question, snapshot, reason) {
+  var q = String(question || '').toLowerCase();
+  var entities = (snapshot && snapshot.entities) ? snapshot.entities : [];
+  var urgent = entities.filter(function (e) { return e.priority === 'Urgent'; });
+  var pausedCandidates = entities
+    .filter(function (e) {
+      return (Number(e.metrics && e.metrics.spend || 0) > 0) && (
+        Number(e.metrics && e.metrics.roas || 0) < 1 ||
+        Number(e.metrics && e.metrics.freq || 0) >= 4
+      );
+    })
+    .sort(function (a, b) { return (Number(b.metrics.spend) || 0) - (Number(a.metrics.spend) || 0); })
+    .slice(0, 3);
+  var scaleCandidates = entities
+    .filter(function (e) { return Number(e.metrics && e.metrics.roas || 0) >= 3; })
+    .sort(function (a, b) { return (Number(b.metrics.roas) || 0) - (Number(a.metrics.roas) || 0); })
+    .slice(0, 3);
+
+  var lines = [];
+  lines.push('Mode bawaan aktif (tanpa ketergantungan API eksternal).');
+  if (reason) lines.push('Catatan mode: ' + reason + '.');
+  lines.push('Ringkasan cepat:');
+  lines.push('- Total item: ' + entities.length + ', Urgent: ' + urgent.length + ', Alert: ' + ((snapshot && snapshot.kpi && snapshot.kpi.alert_count) || 0));
+
+  if (q.indexOf('pause') >= 0 || q.indexOf('hentikan') >= 0) {
+    if (!pausedCandidates.length) {
+      lines.push('Tidak ada kandidat pause kritis dari rule saat ini. Lanjutkan monitor 24 jam.');
+    } else {
+      lines.push('Prioritas pause hari ini:');
+      pausedCandidates.forEach(function (e, i) {
+        lines.push((i + 1) + '. ' + e.name + ' [' + e.level + '] | ROAS ' + fmtLocal_(e.metrics.roas) + ' | Freq ' + fmtLocal_(e.metrics.freq) + ' | Spend Rp ' + numLocal_(e.metrics.spend));
+      });
+    }
+  } else if (q.indexOf('scale') >= 0 || q.indexOf('naik') >= 0) {
+    if (!scaleCandidates.length) {
+      lines.push('Belum ada kandidat scale kuat (ROAS >= 3). Fokus maintenance + test creative.');
+    } else {
+      lines.push('Kandidat scale:');
+      scaleCandidates.forEach(function (e, i) {
+        lines.push((i + 1) + '. ' + e.name + ' [' + e.level + '] | ROAS ' + fmtLocal_(e.metrics.roas) + ' | CTR ' + fmtLocal_(e.metrics.ctr) + '%');
+      });
+    }
+  } else {
+    lines.push('Top prioritas eksekusi:');
+    urgent.slice(0, 3).forEach(function (e, i) {
+      lines.push((i + 1) + '. ' + e.name + ' - ' + e.status + ' | Action: ' + e.action);
+    });
+    if (!urgent.length) lines.push('- Tidak ada item urgent saat ini. Lanjutkan monitor dan optimasi bertahap.');
+  }
+
+  lines.push('Anda tetap bisa mengisi API key OpenAI/Gemini/Claude di Settings kapan saja untuk mode eksternal.');
+  return lines.join('\n');
+}
+
+function fmtLocal_(n) {
+  var x = Number(n) || 0;
+  return x.toFixed(2);
+}
+
+function numLocal_(n) {
+  return (Number(n) || 0).toLocaleString('id-ID', { maximumFractionDigits: 0 });
 }
 
 function createSignedHeaders_(workerToken, signingSecret, rawBody) {

@@ -66,7 +66,7 @@
 
       async function loadAiConfig(){
         const r = await gsr('uiGetAiConfig');
-        STATE.aiConfig = r.data || {provider:'openai',has_openai_key:false,has_gemini_key:false};
+        STATE.aiConfig = r.data || {provider:'builtin',has_openai_key:false,has_gemini_key:false,has_claude_key:false};
       }
 
       function renderTabs(){
@@ -263,18 +263,20 @@
       function renderSettings(el){
         const map={};
         (STATE.snapshot.settings||[]).forEach(s=>{ map[s.key_name]=s.key_value; });
-        const ai = STATE.aiConfig || {provider:'openai',has_openai_key:false,has_gemini_key:false};
+        const ai = STATE.aiConfig || {provider:'builtin',has_openai_key:false,has_gemini_key:false,has_claude_key:false};
         el.innerHTML=`<div class='card'>
           <h3>Settings</h3>
 
           <h4>Konfigurasi AI Pribadi (Per User)</h4>
-          <div class='muted'>API key disimpan per user di backend dan tidak ditampilkan full setelah tersimpan.</div>
+          <div class='muted'>Opsional: API key tidak wajib. Jika kosong, sistem otomatis pakai mode bawaan agar fitur tetap jalan normal.</div>
           <div class='grid'>
             <div>
               <div class='muted'>Provider Aktif</div>
               <select id='aiProvider'>
+                <option value='builtin' ${ai.provider==='builtin'?'selected':''}>Mode Bawaan (tanpa API)</option>
                 <option value='openai' ${ai.provider==='openai'?'selected':''}>OpenAI</option>
                 <option value='gemini' ${ai.provider==='gemini'?'selected':''}>Gemini</option>
+                <option value='claude' ${ai.provider==='claude'?'selected':''}>Claude</option>
               </select>
             </div>
             <div>
@@ -286,6 +288,11 @@
               <div class='muted'>Gemini API Key</div>
               <input id='aiGeminiKey' type='password' placeholder='AIza...' style='width:100%' />
               <div class='muted'>Status: ${ai.has_gemini_key ? `Tersimpan (${ai.gemini_key_masked || '****'})` : 'Belum diisi'}</div>
+            </div>
+            <div>
+              <div class='muted'>Claude API Key</div>
+              <input id='aiClaudeKey' type='password' placeholder='sk-ant-...' style='width:100%' />
+              <div class='muted'>Status: ${ai.has_claude_key ? `Tersimpan (${ai.claude_key_masked || '****'})` : 'Belum diisi'}</div>
             </div>
           </div>
           <div class='row' style='margin-top:10px'>
@@ -325,24 +332,19 @@
         const provider = document.getElementById('aiProvider').value;
         const openaiKey = document.getElementById('aiOpenAiKey').value.trim();
         const geminiKey = document.getElementById('aiGeminiKey').value.trim();
-
-        if (provider === 'openai' && !openaiKey && !STATE.aiConfig?.has_openai_key) {
-          return alert('Provider OpenAI aktif: isi API key OpenAI.');
-        }
-        if (provider === 'gemini' && !geminiKey && !STATE.aiConfig?.has_gemini_key) {
-          return alert('Provider Gemini aktif: isi API key Gemini.');
-        }
+        const claudeKey = document.getElementById('aiClaudeKey').value.trim();
 
         const r = await gsr('uiSaveAiConfig', {
           provider,
           openai_key: openaiKey,
-          gemini_key: geminiKey
+          gemini_key: geminiKey,
+          claude_key: claudeKey
         });
         if (!r.ok) return alert(r.error || 'Gagal menyimpan konfigurasi AI');
 
         await loadAiConfig();
         render();
-        alert('Konfigurasi AI per-user tersimpan');
+        alert('Konfigurasi AI per-user tersimpan. Jika API key kosong, mode bawaan akan dipakai otomatis.');
       }
 
       async function saveThresholds(){

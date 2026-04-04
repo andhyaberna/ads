@@ -138,9 +138,16 @@ async function proxyAi(rawBody, env) {
   }
   const question = body.question || '';
   const summary = body.summary || {};
-  const provider = String(body.provider || 'openai').toLowerCase() === 'gemini' ? 'gemini' : 'openai';
+  const rawProvider = String(body.provider || 'openai').toLowerCase();
+  const provider = ['openai', 'gemini', 'claude'].includes(rawProvider) ? rawProvider : 'openai';
   const userApiKey = String(body.user_api_key || '').trim();
-  const model = body.mode || (provider === 'gemini' ? (env.GEMINI_MODEL || 'gemini-1.5-flash') : (env.OPENAI_MODEL || 'gpt-4o-mini'));
+  const model = body.mode || (
+    provider === 'gemini'
+      ? (env.GEMINI_MODEL || 'gemini-1.5-flash')
+      : provider === 'claude'
+        ? (env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022')
+        : (env.OPENAI_MODEL || 'gpt-4o-mini')
+  );
 
   if (!question) {
     return json({ ok: false, error: 'Question is required' }, 400, {
@@ -160,7 +167,13 @@ async function proxyAi(rawBody, env) {
     }
   }
 
-  const resolvedApiKey = userApiKey || (provider === 'gemini' ? (env.GEMINI_API_KEY || '') : (env.OPENAI_API_KEY || ''));
+  const resolvedApiKey = userApiKey || (
+    provider === 'gemini'
+      ? (env.GEMINI_API_KEY || '')
+      : provider === 'claude'
+        ? (env.CLAUDE_API_KEY || '')
+        : (env.OPENAI_API_KEY || '')
+  );
   if (!resolvedApiKey) {
     return json({ ok: true, answer: `API key ${provider.toUpperCase()} belum tersedia untuk request ini.` }, 200, {
       'access-control-allow-origin': env.ALLOWED_ORIGIN || 'https://ads.cepat.top'
@@ -193,6 +206,24 @@ async function proxyAi(rawBody, env) {
     });
     const geminiData = await geminiRes.json();
     answer = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || answer;
+  } else if (provider === 'claude') {
+    const claudeBase = env.CLAUDE_BASE_URL || 'https://api.anthropic.com/v1';
+    const claudeRes = await fetch(`${claudeBase}/messages`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': resolvedApiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 800,
+        temperature: 0.3,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    const claudeData = await claudeRes.json();
+    answer = claudeData?.content?.[0]?.text || answer;
   } else {
     const base = env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
     const openAiRes = await fetch(`${base}/chat/completions`, {
