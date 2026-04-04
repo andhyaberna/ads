@@ -43,12 +43,23 @@ var useRef = R.useRef;
 
 var SK = "act_v5";
 var AK = "act_api";
+var AKCFG = "act_ai_cfg_v2";
 var DEF = {campaigns:[],adsets:[],ads:[],notes:{},thresholds:{roas:{enabled:true,min:1.5,label:"ROAS min"},cpa:{enabled:false,max:150000,label:"CPA max"},ctr:{enabled:true,min:1,label:"CTR min %"},cpm:{enabled:false,max:60000,label:"CPM max"}}};
 
 function ld(){try{var d=JSON.parse(localStorage.getItem(SK))||DEF;return Object.assign({},DEF,d,{thresholds:Object.assign({},DEF.thresholds,d.thresholds||{})});}catch(e){return DEF;}}
 function sd(d){localStorage.setItem(SK,JSON.stringify(d));}
 function lak(){return localStorage.getItem(AK)||"";}
 function sak(k){localStorage.setItem(AK,k);}
+function laicfg(){
+  try{
+    var legacy=lak();
+    var raw=JSON.parse(localStorage.getItem(AKCFG)||"{}")||{};
+    return {provider:raw.provider||"builtin",openaiKey:raw.openaiKey||"",geminiKey:raw.geminiKey||"",claudeKey:raw.claudeKey||legacy||""};
+  }catch(e){
+    return {provider:"builtin",openaiKey:"",geminiKey:"",claudeKey:lak()||""};
+  }
+}
+function saicfg(cfg){localStorage.setItem(AKCFG,JSON.stringify(cfg||{}));}
 
 function fmt(n,d){d=d||2;if((!n&&n!==0)||isNaN(n)||!isFinite(n))return"-";return Number(n).toFixed(d);}
 function fmtRp(n){if(!n||isNaN(n)||!isFinite(n))return"-";return "Rp "+Math.round(n).toLocaleString("id-ID");}
@@ -166,6 +177,7 @@ function BarViz(props){
 function App(){
   var st=useState(ld()),data=st[0],setData=st[1];
   var st2=useState(lak()),apiKey=st2[0],setApiKey=st2[1];
+  var st2b=useState(laicfg()),aiCfg=st2b[0],setAiCfg=st2b[1];
   var st3=useState("Dashboard"),tab=st3[0],setTab=st3[1];
   var st4=useState({campaign:null,adset:null,ad:null}),imports=st4[0],setImports=st4[1];
   var st5=useState({}),importMsgs=st5[0],setImportMsgs=st5[1];
@@ -180,6 +192,8 @@ function App(){
   var st14=useState(false),aiLoading=st14[0],setAiLoading=st14[1];
   var st15=useState(apiKey),apiKeyInput=st15[0],setApiKeyInput=st15[1];
   var st16=useState(false),showKey=st16[0],setShowKey=st16[1];
+  var st16b=useState(false),showOpenAIKey=st16b[0],setShowOpenAIKey=st16b[1];
+  var st16c=useState(false),showGeminiKey=st16c[0],setShowGeminiKey=st16c[1];
   var st17=useState("roas"),analyticsMetric=st17[0],setAnalyticsMetric=st17[1];
   var st18=useState("Semua"),filterPri=st18[0],setFilterPri=st18[1];
   var st19=useState({}),noteEdit=st19[0],setNoteEdit=st19[1];
@@ -187,6 +201,14 @@ function App(){
   var fRefs={campaign:useRef(),adset:useRef(),ad:useRef(),periodA:useRef(),periodB:useRef()};
 
   useEffect(function(){sd(data);},[data]);
+  useEffect(function(){
+    saicfg(aiCfg);
+    if(aiCfg.claudeKey!==undefined){
+      sak(aiCfg.claudeKey||"");
+      setApiKey(aiCfg.claudeKey||"");
+      setApiKeyInput(aiCfg.claudeKey||"");
+    }
+  },[aiCfg]);
   function upd(fn){setData(function(prev){var next=fn(prev);sd(next);return next;});}
 
   function handleFile(e,lh){
@@ -267,14 +289,49 @@ function App(){
   var hasData=!!(data.campaigns.length||data.adsets.length||data.ads.length);
 
   function runAI(){
-    if(!apiKey){setAiResult("Masukkan API key di Settings.");return;}
     if(!aiInput.trim())return;
     setAiLoading(true);setAiResult("");
     var sum=allItems.slice(0,20).map(function(c){var m=calcM(c);return "["+c._level+"] "+c.name+": Spend Rp"+c.spend+", ROAS "+fmt(m.roas)+", CTR "+fmt(m.ctr)+"%, CPA Rp"+fmt(m.cpa)+", Freq "+fmt(m.freq);}).join("\n");
-    fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1200,messages:[{role:"user",content:"Kamu analis Meta Ads expert. Data:\n"+sum+"\n\nPertanyaan: "+aiInput+"\n\nJawab spesifik, actionable, Bahasa Indonesia."}]})})
-    .then(function(res){return res.json();})
-    .then(function(json){setAiResult(json.error?"Error: "+json.error.message:(json.content&&json.content[0]?json.content[0].text:"Tidak ada respons."));setAiLoading(false);})
-    .catch(function(e){setAiResult("Error: "+e.message);setAiLoading(false);});
+    var prompt="Kamu analis Meta Ads expert. Data:\n"+sum+"\n\nPertanyaan: "+aiInput+"\n\nJawab spesifik, actionable, Bahasa Indonesia.";
+    var provider=(aiCfg.provider||"builtin").toLowerCase();
+    var localFallback=function(msg){
+      var urgent=allItems.filter(function(c){return c._diag&&c._diag[0]&&c._diag[0].priority==="Urgent";}).slice(0,5);
+      var lines=[msg||"Mode builtin aktif.","Prioritas cepat:"];
+      if(!urgent.length)lines.push("- Data belum cukup untuk aksi prioritas.");
+      urgent.forEach(function(c){lines.push("- ["+c._level+"] "+c.name+" -> "+c._diag[0].action);});
+      setAiResult(lines.join("\n"));
+      setAiLoading(false);
+    };
+
+    if(provider==="builtin")return localFallback("Provider AI belum dipilih (builtin).");
+
+    if(provider==="claude"){
+      var ck=aiCfg.claudeKey||apiKey||"";
+      if(!ck)return localFallback("Claude key kosong. Fallback builtin dipakai.");
+      return fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":ck,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1200,messages:[{role:"user",content:prompt}]})})
+      .then(function(res){return res.json();})
+      .then(function(json){setAiResult(json.error?"Error: "+json.error.message:(json.content&&json.content[0]?json.content[0].text:"Tidak ada respons."));setAiLoading(false);})
+      .catch(function(e){localFallback("Claude error: "+e.message);});
+    }
+
+    if(provider==="openai"){
+      if(!aiCfg.openaiKey)return localFallback("OpenAI key kosong. Fallback builtin dipakai.");
+      return fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+aiCfg.openaiKey},body:JSON.stringify({model:"gpt-4o-mini",messages:[{role:"user",content:prompt}],temperature:0.3})})
+      .then(function(res){return res.json();})
+      .then(function(json){setAiResult(json.error?"Error: "+json.error.message:(json.choices&&json.choices[0]&&json.choices[0].message?json.choices[0].message.content:"Tidak ada respons."));setAiLoading(false);})
+      .catch(function(e){localFallback("OpenAI error: "+e.message);});
+    }
+
+    if(provider==="gemini"){
+      if(!aiCfg.geminiKey)return localFallback("Gemini key kosong. Fallback builtin dipakai.");
+      var gurl="https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key="+encodeURIComponent(aiCfg.geminiKey);
+      return fetch(gurl,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})})
+      .then(function(res){return res.json();})
+      .then(function(json){var t=json&&json.candidates&&json.candidates[0]&&json.candidates[0].content&&json.candidates[0].content.parts&&json.candidates[0].content.parts[0]?json.candidates[0].content.parts[0].text:"Tidak ada respons.";setAiResult(json.error?"Error: "+json.error.message:t);setAiLoading(false);})
+      .catch(function(e){localFallback("Gemini error: "+e.message);});
+    }
+
+    localFallback("Provider tidak dikenali. Fallback builtin dipakai.");
   }
 
   // Render tabs
@@ -565,7 +622,7 @@ function App(){
     // AI
     tab==="AI"&&h("div",null,
       h("div",{style:{fontSize:14,fontWeight:500,marginBottom:8}},"AI Analyzer"),
-      h("div",{style:{fontSize:13,color:"#888",marginBottom:16}},apiKey?"API key terhubung.":"API key belum diset. Masuk ke Settings."),
+      h("div",{style:{fontSize:13,color:"#888",marginBottom:16}},"Provider: "+(aiCfg.provider||"builtin")+". Key opsional, fallback builtin tetap jalan."),
       h("textarea",{style:{height:80,resize:"vertical",marginBottom:10},placeholder:"Contoh: Ad mana yang harus dipause hari ini?",value:aiInput,onChange:function(e){setAiInput(e.target.value);}}),
       h("button",{className:"btnp",style:{marginBottom:16},onClick:runAI,disabled:aiLoading},aiLoading?"Menganalisis...":"Analisis"),
       aiResult&&h("div",{style:{background:"#f5f5f3",borderRadius:8,padding:"16px",fontSize:13,lineHeight:1.7,whiteSpace:"pre-wrap",minHeight:80}},aiResult),
@@ -600,15 +657,40 @@ function App(){
     tab==="Settings"&&h("div",null,
       h("div",{style:{fontSize:14,fontWeight:500,marginBottom:16}},"Settings"),
       h("div",{className:"card"},
-        h("div",{style:{fontWeight:500,marginBottom:4}},"Claude API Key"),
-        h("div",{style:{fontSize:12,color:"#888",marginBottom:12}},"Untuk AI Analyzer. Dapatkan di console.anthropic.com"),
+        h("div",{style:{fontWeight:500,marginBottom:4}},"AI Provider (Opsional)"),
+        h("div",{style:{fontSize:12,color:"#888",marginBottom:12}},"Tambahan opsional OpenAI/Gemini/Claude. Jika kosong, sistem pakai builtin mode."),
+        h("div",{style:{marginBottom:10}},
+          h("select",{value:aiCfg.provider||"builtin",onChange:function(e){var v=e.target.value;setAiCfg(function(c){return Object.assign({},c,{provider:v});});}},
+            h("option",{value:"builtin"},"Builtin (tanpa API key)"),
+            h("option",{value:"openai"},"OpenAI"),
+            h("option",{value:"gemini"},"Gemini"),
+            h("option",{value:"claude"},"Claude")
+          )
+        ),
+        h("div",{style:{fontSize:12,marginBottom:6,color:"#666"}},"OpenAI API Key"),
+        h("div",{className:"row",style:{marginBottom:8}},
+          h("input",{type:showOpenAIKey?"text":"password",style:{flex:1},placeholder:"sk-...",value:aiCfg.openaiKey||"",onChange:function(e){var v=e.target.value;setAiCfg(function(c){return Object.assign({},c,{openaiKey:v});});}}),
+          h("button",{onClick:function(){setShowOpenAIKey(!showOpenAIKey);}},showOpenAIKey?"Sembunyikan":"Tampilkan")
+        ),
+        h("div",{style:{fontSize:12,marginBottom:6,color:"#666"}},"Gemini API Key"),
+        h("div",{className:"row",style:{marginBottom:8}},
+          h("input",{type:showGeminiKey?"text":"password",style:{flex:1},placeholder:"AIza...",value:aiCfg.geminiKey||"",onChange:function(e){var v=e.target.value;setAiCfg(function(c){return Object.assign({},c,{geminiKey:v});});}}),
+          h("button",{onClick:function(){setShowGeminiKey(!showGeminiKey);}},showGeminiKey?"Sembunyikan":"Tampilkan")
+        ),
+        h("div",{style:{fontSize:12,marginBottom:6,color:"#666"}},"Claude API Key"),
         h("div",{className:"row"},
-          h("input",{type:showKey?"text":"password",style:{flex:1},placeholder:"sk-ant-...",value:apiKeyInput,onChange:function(e){setApiKeyInput(e.target.value);}}),
+          h("input",{type:showKey?"text":"password",style:{flex:1},placeholder:"sk-ant-...",value:apiKeyInput,onChange:function(e){setApiKeyInput(e.target.value);setAiCfg(function(c){return Object.assign({},c,{claudeKey:e.target.value});});}}),
           h("button",{onClick:function(){setShowKey(!showKey);}},showKey?"Sembunyikan":"Tampilkan")
         ),
         h("div",{className:"row",style:{marginTop:10}},
-          h("button",{className:"btnp",onClick:function(){sak(apiKeyInput);setApiKey(apiKeyInput);}},"Simpan"),
-          apiKey&&h("span",{style:{fontSize:12,color:"#0f6e56"}},"Tersimpan")
+          h("button",{className:"btnp",onClick:function(){
+            var next=Object.assign({},aiCfg,{claudeKey:apiKeyInput||aiCfg.claudeKey||""});
+            setAiCfg(next);
+            saicfg(next);
+            sak(next.claudeKey||"");
+            setApiKey(next.claudeKey||"");
+          }},"Simpan"),
+          h("span",{style:{fontSize:12,color:"#0f6e56"}},"Tersimpan lokal")
         )
       ),
       h("div",{className:"card"},
