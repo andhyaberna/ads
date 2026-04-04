@@ -43,6 +43,7 @@ var useRef = R.useRef;
 
 var SK = "act_v5";
 var AKCFG = "act_ai_cfg_v2";
+var APIBASEK = "act_api_base_v1";
 var DEF = {campaigns:[],adsets:[],ads:[],notes:{},thresholds:{roas:{enabled:true,min:1.5,label:"ROAS min"},cpa:{enabled:false,max:150000,label:"CPA max"},ctr:{enabled:true,min:1,label:"CTR min %"},cpm:{enabled:false,max:60000,label:"CPM max"}}};
 
 function ld(){try{var d=JSON.parse(localStorage.getItem(SK))||DEF;return Object.assign({},DEF,d,{thresholds:Object.assign({},DEF.thresholds,d.thresholds||{})});}catch(e){return DEF;}}
@@ -56,6 +57,36 @@ function laicfg(){
   }
 }
 function saicfg(cfg){localStorage.setItem(AKCFG,JSON.stringify(cfg||{}));}
+
+function normApiBase(v){
+  var s=String(v||"").trim();
+  if(!s)return "";
+  if(/^https?:\/\//i.test(s))return s.replace(/\/$/,"");
+  return "";
+}
+
+function detectApiBase(){
+  try{
+    var q=new URLSearchParams(location.search||"");
+    var fromQuery=normApiBase(q.get("api_base")||q.get("worker_url")||"");
+    if(fromQuery){localStorage.setItem(APIBASEK,fromQuery);return fromQuery;}
+  }catch(e){}
+  try{
+    var fromStore=normApiBase(localStorage.getItem(APIBASEK)||"");
+    if(fromStore)return fromStore;
+  }catch(e){}
+  var host=(location.hostname||"").toLowerCase();
+  if(host==="ads.cepat.top")return "";
+  return "https://ads.cepat.top";
+}
+
+var APIBASE = detectApiBase();
+function apiPath(path){
+  var p=String(path||"");
+  if(/^https?:\/\//i.test(p))return p;
+  if(p.charAt(0)!=="/")p="/"+p;
+  return (APIBASE?APIBASE.replace(/\/$/,""):"")+p;
+}
 
 function mapSnapshotToLocalData(snapshot){
   var s=snapshot||{};
@@ -246,11 +277,14 @@ function App(){
   function req(path,method,payload){
     var opts={method:method||"GET",headers:{"Content-Type":"application/json"}};
     if(payload!==undefined)opts.body=JSON.stringify(payload);
-    return fetch(path,opts).then(function(res){
+    return fetch(apiPath(path),opts).then(function(res){
       return res.text().then(function(t){
         var j={};
         try{j=t?JSON.parse(t):{};}catch(e){j={ok:false,error:"Invalid server response"};}
-        if(!res.ok||j.ok===false)throw new Error((j&&j.error)||"Request failed");
+        if(!res.ok||j.ok===false){
+          var baseErr=(j&&j.error)||"Request failed";
+          throw new Error(baseErr+" (HTTP "+res.status+")");
+        }
         return j;
       });
     });
@@ -263,9 +297,12 @@ function App(){
       setData(mapped);
       setLiveState("live");
       setLiveMsg("Live sync aktif");
-    }).catch(function(){
+    }).catch(function(err){
       setLiveState("local");
-      if(showMsg)setLiveMsg("Mode lokal (live sync gagal sementara)");
+      if(showMsg){
+        var msg=(err&&err.message?err.message:"");
+        setLiveMsg("Mode lokal (live sync gagal sementara)"+(msg?" — "+msg:""));
+      }
     });
   }
 
