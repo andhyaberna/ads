@@ -16,6 +16,11 @@ export default {
       return json({ ok: true, worker: 'ads', ts: Date.now() }, 200, corsHeaders);
     }
 
+    if (path === '/' && request.method === 'GET') {
+      const target = env.GAS_WEB_APP_URL || 'https://script.google.com/macros/s/AKfycbyEQM12lmuZ_Q7NrBC_OVEHXDHN49oLEe52GLuMbFbSiH3HSzz6PK1S7DULwnfuTp4U/exec';
+      return Response.redirect(target, 302);
+    }
+
     if (!isAllowedOrigin(request, env)) {
       return json({ ok: false, error: 'Origin not allowed' }, 403, corsHeaders);
     }
