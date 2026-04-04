@@ -1,0 +1,23 @@
+name = "ads"
+main = "index.js"
+compatibility_date = "2026-04-04"
+
+[vars]
+ALLOWED_ORIGIN = "https://ads.cepat.top"
+RATE_LIMIT_PER_MIN = "60"
+SIGNATURE_MAX_SKEW_MS = "300000"
+NONCE_TTL_SEC = "600"
+AI_CACHE_TTL_SEC = "300"
+WEBHOOK_MAX_SKEW_MS = "300000"
+
+[[kv_namespaces]]
+binding = "RATE_LIMIT_KV"
+id = "REPLACE_WITH_KV_ID"
+
+[[kv_namespaces]]
+binding = "REPLAY_KV"
+id = "REPLACE_WITH_REPLAY_KV_ID"
+
+[[kv_namespaces]]
+binding = "AI_CACHE_KV"
+id = "REPLACE_WITH_AI_CACHE_KV_ID"
