@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Ad Campaign Tracker</title>
+    <style>
+      body{font-family:Arial,sans-serif;margin:0;background:#f5f7fb;color:#1f2937}
+      .top{padding:12px 16px;background:#111827;color:#fff;position:sticky;top:0;z-index:10}
+      .tabs{display:flex;flex-wrap:wrap;gap:8px;padding:10px 16px;background:#fff;border-bottom:1px solid #e5e7eb}
+      .tab{padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;cursor:pointer;font-size:13px;background:#fff}
+      .tab.active{background:#111827;color:#fff;border-color:#111827}
+      .wrap{padding:16px}
+      .panel{display:none}
+      .panel.active{display:block}
+      .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+      .card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px}
+      .muted{color:#6b7280;font-size:12px}
+      .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;color:#fff}
+      .b-level-campaign{background:#1d4ed8}.b-level-adset{background:#0891b2}.b-level-ad{background:#7c3aed}
+      .b-prio-Urgent{background:#dc2626}.b-prio-Normal{background:#2563eb}.b-prio-Monitor{background:#4b5563}
+      .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+      input,select,textarea,button{padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:13px}
+      textarea{width:100%;min-height:90px}
+      button{cursor:pointer;background:#111827;color:#fff}
+      button.secondary{background:#fff;color:#111827}
+      .bar{height:12px;background:#e5e7eb;border-radius:999px;overflow:hidden}
+      .bar>span{display:block;height:100%;background:#2563eb}
+      .table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e7eb}
+      .table th,.table td{border-bottom:1px solid #e5e7eb;padding:8px;font-size:12px;text-align:left}
+      .empty{padding:20px;background:#fff;border:1px dashed #cbd5e1;border-radius:10px;color:#64748b}
+    </style>
+  </head>
+  <body>
+    <div class="top"><strong>Ad Campaign Tracker</strong> <span class="muted">(Internal Web App)</span></div>
+    <div class="tabs" id="tabs"></div>
+    <div class="wrap" id="content"></div>
+
+    <script>
+      const TAB_LIST = ['Dashboard','Rekomendasi','Brief','Periode','Alert','Hierarki','Analitik','AI','Import','Settings'];
+      const STATE = {tab:'Dashboard',snapshot:null,priority:'Semua',compareRows:[]};
+
+      function fmt(n,d=2){n=Number(n||0);return n.toLocaleString('id-ID',{maximumFractionDigits:d,minimumFractionDigits:0})}
+      function rp(n){return `Rp ${Number(n||0).toLocaleString('id-ID',{maximumFractionDigits:0})}`}
+      function pct(n){return `${fmt(n,2)}%`}
+      function levelCls(l){return l==='campaign'?'b-level-campaign':l==='adset'?'b-level-adset':'b-level-ad'}
+
+      function gsr(fn,payload){
+        return new Promise((resolve,reject)=>{
+          google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](payload||{});
+        });
+      }
+
+      async function init(){
+        renderTabs();
+        await gsr('uiBootstrap');
+        await loadSnapshot();
+        render();
+      }
+
+      async function loadSnapshot(){
+        const r = await gsr('uiSnapshot');
+        STATE.snapshot = r.data || {kpi:{},entities:[],thresholds:[],settings:[]};
+      }
+
+      function renderTabs(){
+        const el=document.getElementById('tabs');
+        el.innerHTML=TAB_LIST.map(t=>`<button class="tab ${STATE.tab===t?'active':''}" onclick="switchTab('${t}')">${t}</button>`).join('');
+      }
+      function switchTab(t){STATE.tab=t;renderTabs();render()}
+
+      function render(){
+        const el=document.getElementById('content');
+        if(!STATE.snapshot||!(STATE.snapshot.entities||[]).length && ['Dashboard','Rekomendasi','Brief','Alert','Hierarki','Analitik'].includes(STATE.tab)){
+          el.innerHTML=`<div class='empty'>Belum ada data. Silakan import CSV dulu di tab <b>Import</b>.</div>`;
+          return;
+        }
+        if(STATE.tab==='Dashboard') return renderDashboard(el);
+        if(STATE.tab==='Rekomendasi') return renderReco(el);
+        if(STATE.tab==='Brief') return renderBrief(el);
+        if(STATE.tab==='Periode') return renderPeriode(el);
+        if(STATE.tab==='Alert') return renderAlert(el);
+        if(STATE.tab==='Hierarki') return renderHierarki(el);
+        if(STATE.tab==='Analitik') return renderAnalitik(el);
+        if(STATE.tab==='AI') return renderAI(el);
+        if(STATE.tab==='Import') return renderImport(el);
+        if(STATE.tab==='Settings') return renderSettings(el);
+      }
+
+      function renderDashboard(el){
+        const k=STATE.snapshot.kpi||{};
+        const campaigns=(STATE.snapshot.entities||[]).filter(e=>e.level==='campaign');
+        const max=Math.max(1,...campaigns.map(c=>c.metrics.roas||0));
+        el.innerHTML=`
+          <div class='grid'>
+            <div class='card'><div class='muted'>Total Spend</div><b>${rp(k.total_spend)}</b></div>
+            <div class='card'><div class='muted'>Total Revenue</div><b>${rp(k.total_revenue)}</b></div>
+            <div class='card'><div class='muted'>ROAS Keseluruhan</div><b>${fmt(k.roas_overall)}</b></div>
+            <div class='card'><div class='muted'>Campaign</div><b>${k.campaign_count||0}</b></div>
+            <div class='card'><div class='muted'>Ad Set</div><b>${k.adset_count||0}</b></div>
+            <div class='card'><div class='muted'>Ad</div><b>${k.ad_count||0}</b></div>
+            <div class='card'><div class='muted'>Item Urgent</div><b>${k.urgent_count||0}</b></div>
+            <div class='card'><div class='muted'>Alert</div><b>${k.alert_count||0}</b></div>
+          </div>
+          <h3>ROAS per Campaign</h3>
+          ${(campaigns||[]).map(c=>`<div class='card'><div class='row'><strong>${c.name}</strong><span class='muted'>ROAS ${fmt(c.metrics.roas)}</span></div><div class='bar'><span style='width:${Math.min(100,(c.metrics.roas/max)*100)}%'></span></div></div>`).join('')}
+        `;
+      }
+
+      function renderReco(el){
+        const rows=(STATE.snapshot.entities||[]).filter(e=>STATE.priority==='Semua'||e.priority===STATE.priority);
+        el.innerHTML=`
+          <div class='row'>
+            <label>Filter priority</label>
+            <select onchange="STATE.priority=this.value;renderReco(document.getElementById('content'))">
+              ${['Semua','Urgent','Normal','Monitor'].map(p=>`<option ${STATE.priority===p?'selected':''}>${p}</option>`).join('')}
+            </select>
+          </div>
+          ${rows.map(e=>`<div class='card'>
+            <div class='row'>
+              <b>${e.name}</b>
+              <span class='badge ${levelCls(e.level)}'>${e.level==='campaign'?'Campaign':e.level==='adset'?'Ad Set':'Ad'}</span>
+              <span class='badge b-prio-${e.priority}'>${e.priority}</span>
+            </div>
+            <div class='muted'>${e.status} • Alert: ${(e.alerts||[]).length}</div>
+            <div class='muted'>Spend ${rp(e.metrics.spend)} | CTR ${pct(e.metrics.ctr)} | CPM ${rp(e.metrics.cpm)} | Freq ${fmt(e.metrics.freq)} | CPA ${rp(e.metrics.cpa)} | ROAS ${fmt(e.metrics.roas)}</div>
+            <p><b>Diagnosis:</b> ${e.diagnosis}<br><b>Action:</b> ${e.action}</p>
+            <div class='row'>
+              <button class='secondary' onclick="openBrief('${e.id}')">Brief Creative</button>
+              <button class='secondary' onclick="saveNotePrompt('${e.level}','${(e.name||'').replace(/'/g,"\\'")}')">Catatan</button>
+            </div>
+          </div>`).join('')}
+        `;
+      }
+
+      function openBrief(id){
+        const found=(STATE.snapshot.entities||[]).find(x=>x.id===id);
+        window.__selectedBrief=found||null;
+        switchTab('Brief');
+      }
+
+      async function saveNotePrompt(level,name){
+        const val=prompt(`Catatan untuk ${name}`, '');
+        if(val===null) return;
+        await gsr('uiSaveNote',{entity_level:level,entity_name:name,note_text:val});
+        await loadSnapshot();
+        render();
+      }
+
+      function renderBrief(el){
+        const e=window.__selectedBrief || (STATE.snapshot.entities||[])[0];
+        const briefs=e?.briefs||[];
+        el.innerHTML=`<div class='card'><h3>${e?e.name:'-'}</h3>
+          ${briefs.map(b=>`<p><b>Problem:</b> ${b.problem}<br><b>Root Cause:</b> ${b.root_cause}<br><b>Angles:</b> ${(b.angles||[]).join(', ')}<br><b>Hook Note:</b> ${b.hook_note}<br><b>Format:</b> ${b.format}</p>`).join('')}
+        </div>`;
+      }
+
+      function renderPeriode(el){
+        el.innerHTML=`
+          <div class='card'>
+            <div class='row'>
+              <select id='cmpLevel'><option value='campaign'>Campaign</option><option value='adset'>Ad Set</option><option value='ad'>Ad</option></select>
+              <input type='file' id='csvA' accept='.csv' />
+              <input type='file' id='csvB' accept='.csv' />
+              <button onclick='runCompare()'>Bandingkan</button>
+            </div>
+          </div>
+          <table class='table'><thead><tr><th>Entity</th><th>ROAS A</th><th>ROAS B</th><th>Delta ROAS%</th><th>CTR A</th><th>CTR B</th><th>Delta CTR%</th><th>CPA A</th><th>CPA B</th><th>Delta CPA%</th></tr></thead>
+          <tbody>${STATE.compareRows.map(r=>`<tr><td>${r.name}</td><td>${fmt(r.roas_a)}</td><td>${fmt(r.roas_b)}</td><td>${pct(r.delta_roas_pct)}</td><td>${pct(r.ctr_a)}</td><td>${pct(r.ctr_b)}</td><td>${pct(r.delta_ctr_pct)}</td><td>${rp(r.cpa_a)}</td><td>${rp(r.cpa_b)}</td><td>${pct(r.delta_cpa_pct)}</td></tr>`).join('')}</tbody></table>
+        `;
+      }
+
+      async function runCompare(){
+        const a=(document.getElementById('csvA').files||[])[0];
+        const b=(document.getElementById('csvB').files||[])[0];
+        if(!a||!b) return alert('Upload CSV A dan B');
+        const level=document.getElementById('cmpLevel').value;
+        const csvA=await a.text();
+        const csvB=await b.text();
+        const r=await gsr('uiComparePeriods',{level,csv_a:csvA,csv_b:csvB});
+        STATE.compareRows=r.rows||[];
+        renderPeriode(document.getElementById('content'));
+      }
+
+      function renderAlert(el){
+        const rows=(STATE.snapshot.entities||[]).flatMap(e=>(e.alerts||[]).map(a=>({...a,name:e.name,level:e.level})));
+        el.innerHTML=`<div class='card'><h3>Daftar Alert</h3><table class='table'><thead><tr><th>Entity</th><th>Level</th><th>Metric</th><th>Nilai</th><th>Threshold</th><th>Severity</th></tr></thead><tbody>
+          ${rows.map(r=>`<tr><td>${r.name}</td><td>${r.level}</td><td>${r.metric}</td><td>${fmt(r.value)}</td><td>${r.threshold}</td><td>${r.severity}</td></tr>`).join('')}
+        </tbody></table></div>`;
+      }
+
+      function renderHierarki(el){
+        const h=STATE.snapshot.hierarchy||{};
+        const names=Object.keys(h);
+        el.innerHTML=names.map(cn=>{
+          const c=h[cn];
+          const adsets=Object.keys(c.adsets||{}).map(n=>{
+            const node=c.adsets[n];
+            return `<details><summary>Ad Set: ${n}</summary>${(node.ads||[]).map(a=>`<div class='muted'>Ad: ${a.ad_name} | Spend ${rp(a.spend)} | ROAS ${fmt(a.roas)}</div>`).join('')}</details>`;
+          }).join('');
+          const orphan=(c.orphanAds||[]).map(a=>`<div class='muted'>Orphan Ad: ${a.ad_name}</div>`).join('');
+          return `<details class='card' open><summary><b>Campaign: ${cn}</b></summary>${adsets}${orphan}</details>`;
+        }).join('');
+      }
+
+      function renderAnalitik(el){
+        const metricOptions=['roas','ctr','cpa','spend','cpm'];
+        const selected=window.__metric || 'roas';
+        const rows=(STATE.snapshot.entities||[]).filter(e=>e.level==='campaign');
+        const max=Math.max(1,...rows.map(r=>Number(r.metrics[selected]||0)));
+        el.innerHTML=`<div class='row'><label>Metric</label><select onchange="window.__metric=this.value;renderAnalitik(document.getElementById('content'))">${metricOptions.map(m=>`<option ${selected===m?'selected':''}>${m}</option>`).join('')}</select></div>
+        ${rows.map(r=>`<div class='card'><div class='row'><b>${r.name}</b><span class='muted'>${selected.toUpperCase()}: ${fmt(r.metrics[selected])}</span></div><div class='bar'><span style='width:${Math.min(100,(r.metrics[selected]/max)*100)}%'></span></div><div class='muted'>Spend ${rp(r.metrics.spend)} vs Revenue ${rp(r.metrics.revenue)}</div></div>`).join('')}`;
+      }
+
+      function renderAI(el){
+        el.innerHTML=`<div class='card'>
+          <h3>AI Analyzer</h3>
+          <div class='muted'>Contoh pertanyaan: Ad mana yang harus dipause hari ini? • Creative mana yang bisa discale sekarang? • Di mana kebocoran budget terbesar?</div>
+          <textarea id='aiQ' placeholder='Tulis pertanyaan Anda...'></textarea>
+          <div class='row'><button onclick='askAi()'>Analisa</button></div>
+          <pre id='aiAns' class='card muted'></pre>
+        </div>`;
+      }
+
+      async function askAi(){
+        const q=document.getElementById('aiQ').value.trim();
+        if(!q) return alert('Isi pertanyaan dulu');
+        document.getElementById('aiAns').textContent='Memproses...';
+        const r=await gsr('uiAskAi',{question:q});
+        document.getElementById('aiAns').textContent=r.answer||'Tidak ada jawaban';
+      }
+
+      function renderImport(el){
+        el.innerHTML=`<div class='card'><h3>Import CSV Meta Ads</h3>
+          <div class='row'><select id='impLevel'><option value='campaign'>Campaign</option><option value='adset'>Ad Set</option><option value='ad'>Ad</option></select>
+          <input id='periodLabel' placeholder='Period label (contoh: 2026-04-01 s/d 2026-04-07)' style='min-width:320px' />
+          <input type='file' id='impCsv' accept='.csv' /><button onclick='runImport()'>Upload</button></div>
+          <div class='muted'>Upload terpisah per level: campaign/adset/ad.</div>
+        </div>`;
+      }
+
+      async function runImport(){
+        const file=(document.getElementById('impCsv').files||[])[0];
+        if(!file) return alert('Pilih file CSV');
+        const level=document.getElementById('impLevel').value;
+        const periodLabel=document.getElementById('periodLabel').value||'';
+        const csv=await file.text();
+        const r=await gsr('uiImportCsv',{level,csv_text:csv,file_name:file.name,period_label:periodLabel});
+        if(!r.ok) return alert(r.error||'Import gagal');
+        alert(`Import sukses: ${r.row_count} baris`);
+        await loadSnapshot();
+        STATE.tab='Rekomendasi';
+        renderTabs();
+        render();
+      }
+
+      function renderSettings(el){
+        const map={};
+        (STATE.snapshot.settings||[]).forEach(s=>{ map[s.key_name]=s.key_value; });
+        el.innerHTML=`<div class='card'>
+          <h3>Settings</h3>
+          <div class='grid'>
+            <div><div class='muted'>WORKER_URL</div><input id='setWorkerUrl' value='${map.WORKER_URL||''}' style='width:100%'/></div>
+            <div><div class='muted'>WORKER_TOKEN</div><input id='setWorkerToken' value='${map.WORKER_TOKEN||''}' style='width:100%'/></div>
+            <div><div class='muted'>WORKER_SIGNING_SECRET (opsional)</div><input id='setWorkerSigningSecret' value='${map.WORKER_SIGNING_SECRET||''}' style='width:100%'/></div>
+            <div><div class='muted'>AI_MODE</div><input id='setAiMode' value='${map.AI_MODE||'ad-analysis-mini'}' style='width:100%'/></div>
+          </div>
+          <div class='row' style='margin-top:10px'>
+            <button onclick='saveSettings()'>Simpan Settings</button>
+            <button class='secondary' onclick='saveThresholds()'>Simpan Threshold</button>
+            <button class='secondary' onclick='resetData()'>Reset Data</button>
+          </div>
+          <h4>Threshold</h4>
+          <div id='thRows'>${(STATE.snapshot.thresholds||[]).map((t,i)=>`<div class='row' data-idx='${i}'><input value='${t.metric_key}' disabled><select class='th-enabled'><option value='true' ${String(t.enabled)==='true'?'selected':''}>true</option><option value='false' ${String(t.enabled)==='false'?'selected':''}>false</option></select><select class='th-rule'><option value='min' ${t.rule_type==='min'?'selected':''}>min</option><option value='max' ${t.rule_type==='max'?'selected':''}>max</option></select><input class='th-value' value='${t.value}'><input class='th-label' value='${t.label}'></div>`).join('')}</div>
+        </div>`;
+      }
+
+      async function saveSettings(){
+        const items=[
+          {key_name:'WORKER_URL',key_value:document.getElementById('setWorkerUrl').value.trim()},
+          {key_name:'WORKER_TOKEN',key_value:document.getElementById('setWorkerToken').value.trim()},
+          {key_name:'WORKER_SIGNING_SECRET',key_value:document.getElementById('setWorkerSigningSecret').value.trim()},
+          {key_name:'AI_MODE',key_value:document.getElementById('setAiMode').value.trim()}
+        ];
+        await gsr('uiSaveSettings',{items});
+        await loadSnapshot();render();alert('Settings tersimpan');
+      }
+
+      async function saveThresholds(){
+        const base=STATE.snapshot.thresholds||[];
+        const rows=[...document.querySelectorAll('#thRows .row')];
+        const items=rows.map((r,i)=>({
+          metric_key:base[i].metric_key,
+          enabled:r.querySelector('.th-enabled').value,
+          rule_type:r.querySelector('.th-rule').value,
+          value:Number(r.querySelector('.th-value').value||0),
+          label:r.querySelector('.th-label').value
+        }));
+        await gsr('uiSaveThresholds',{items});
+        await loadSnapshot();render();alert('Threshold tersimpan');
+      }
+
+      async function resetData(){
+        if(!confirm('Reset data campaigns/adsets/ads/notes/import_logs?')) return;
+        await gsr('uiResetData');
+        await loadSnapshot();
+        STATE.tab='Dashboard';
+        renderTabs();render();
+      }
+
+      Object.assign(window, { switchTab, openBrief, saveNotePrompt, runCompare, askAi, runImport, saveSettings, saveThresholds, resetData });
+      init().catch(err=>{document.getElementById('content').innerHTML=`<div class="empty">Error: ${err.message}</div>`});
+    </script>
+  </body>
+</html>
