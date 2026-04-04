@@ -196,9 +196,9 @@ function apiImportCsv_(payload) {
 
 function apiGetSnapshot_() {
   ensureDbReady();
-  var campaigns = getSheetRows_('campaigns');
-  var adsets = getSheetRows_('adsets');
-  var ads = getSheetRows_('ads');
+  var campaigns = getSheetRows_('campaigns').filter(function (r) { return !isEntityRowOff_(r); });
+  var adsets = getSheetRows_('adsets').filter(function (r) { return !isEntityRowOff_(r); });
+  var ads = getSheetRows_('ads').filter(function (r) { return !isEntityRowOff_(r); });
   var thresholds = getSheetRows_('thresholds');
   var notes = getSheetRows_('notes');
   var settings = sanitizeSettingsForClient_(getSheetRows_('settings'));
@@ -244,6 +244,15 @@ function apiGetSnapshot_() {
     settings: settings,
     import_logs: getSheetRows_('import_logs')
   };
+}
+
+function isEntityRowOff_(row) {
+  row = row || {};
+  var spend = Number(row.spend) || 0;
+  var impressions = Number(row.impressions) || 0;
+  var results = Number(row.results) || 0;
+  var revenue = Number(row.revenue) || 0;
+  return spend === 0 && impressions === 0 && results === 0 && revenue === 0;
 }
 
 function enrichEntity_(row, level, thresholdRows, notes) {

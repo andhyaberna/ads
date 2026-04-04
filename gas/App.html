@@ -19,6 +19,7 @@
       .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;color:#fff}
       .b-level-campaign{background:#1d4ed8}.b-level-adset{background:#0891b2}.b-level-ad{background:#7c3aed}
       .b-prio-Urgent{background:#dc2626}.b-prio-Normal{background:#2563eb}.b-prio-Monitor{background:#4b5563}
+      .b-prio-Default{background:#64748b}
       .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
       input,select,textarea,button{padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:13px}
       textarea{width:100%;min-height:90px}
@@ -38,12 +39,74 @@
 
     <script>
       const TAB_LIST = ['Dashboard','Rekomendasi','Brief','Periode','Alert','Hierarki','Analitik','AI','Import','Settings'];
-      const STATE = {tab:'Dashboard',snapshot:null,priority:'Semua',compareRows:[],aiConfig:null,systemConfig:null,isAdmin:false};
+      const STATE = {tab:'Dashboard',snapshot:null,priority:'Semua',compareRows:[],aiConfig:null,systemConfig:null,isAdmin:false,hierarchyCampaign:'ALL'};
 
       function fmt(n,d=2){n=Number(n||0);return n.toLocaleString('id-ID',{maximumFractionDigits:d,minimumFractionDigits:0})}
       function rp(n){return `Rp ${Number(n||0).toLocaleString('id-ID',{maximumFractionDigits:0})}`}
       function pct(n){return `${fmt(n,2)}%`}
       function levelCls(l){return l==='campaign'?'b-level-campaign':l==='adset'?'b-level-adset':'b-level-ad'}
+      function prioCls(p){return p==='Urgent'||p==='Normal'||p==='Monitor' ? `b-prio-${p}` : 'b-prio-Default'}
+      function num(n){return Number(n||0)}
+      function isOffEntity(e){
+        const m=e?.metrics||{};
+        return num(m.spend)===0 && num(m.impressions)===0 && num(m.results)===0 && num(m.revenue)===0 && num(m.clicks)===0;
+      }
+      function isOffRow(r){
+        r=r||{};
+        return num(r.spend)===0 && num(r.impressions)===0 && num(r.results)===0 && num(r.revenue)===0;
+      }
+      function activeEntities(level){
+        const rows=(STATE.snapshot?.entities||[]).filter(e=>!isOffEntity(e));
+        return level ? rows.filter(e=>e.level===level) : rows;
+      }
+      function optimizationChecklist(e){
+        const m=e?.metrics||{};
+        const steps=[];
+
+        if(num(m.spend) > 0 && num(m.roas) < 1){
+          steps.push('Pause sementara 24 jam, evaluasi ulang hook, offer, dan audience sebelum diaktifkan lagi.');
+        } else if (num(m.roas) >= 3){
+          steps.push('Scale budget bertahap 20-30% per 24 jam sambil menjaga CPA agar tetap stabil.');
+        }
+
+        if(num(m.impressions) > 0 && num(m.ctr) < 0.8){
+          steps.push('Optimasi creative: ganti thumbnail, perkuat 3 detik pertama, dan test minimal 3 hook baru.');
+        }
+
+        if(num(m.freq) >= 2.5){
+          steps.push('Cegah fatigue: rotasi materi iklan, perluas audience, atau pisahkan audience overlap.');
+        }
+
+        if(num(m.results) > 0 && num(m.cpa) > 0 && num(m.roas) < 1.5){
+          steps.push('Turunkan CPA dengan memperjelas CTA, pre-qualify audience, dan sinkronkan pesan iklan ke landing page.');
+        }
+
+        if(num(m.atcRate) > 0 && num(m.conversionRate) < 20){
+          steps.push('Perbaiki funnel checkout: kecepatan halaman, trust element, dan simplifikasi form/step pembayaran.');
+        }
+
+        if(!steps.length){
+          steps.push('Performa relatif stabil. Fokuskan optimasi pada eksperimen kreatif kecil dan monitoring harian.');
+        }
+
+        return steps;
+      }
+      function analyticOptimizationNote(e, metric){
+        const m=e?.metrics||{};
+        if(metric==='roas') return num(m.roas) < 1.5
+          ? 'ROAS masih rendah. Prioritaskan perbaikan offer, kualitas traffic, dan kesesuaian pesan iklan-landing page.'
+          : 'ROAS sehat. Pertahankan struktur yang menang lalu scale bertahap dengan kontrol frekuensi.';
+        if(metric==='ctr') return num(m.ctr) < 1
+          ? 'CTR rendah. Fokus pada angle/hook baru, visual lebih kontras, dan headline yang lebih spesifik manfaat.'
+          : 'CTR baik. Lanjutkan A/B test ringan untuk menjaga momentum tanpa mengganggu pemenang utama.';
+        if(metric==='cpa') return num(m.cpa) > 0
+          ? 'Turunkan CPA dengan memperbaiki pre-qualifikasi audience dan mengurangi friksi setelah klik.'
+          : 'CPA belum terbentuk jelas. Kumpulkan data tambahan sambil memastikan tracking event lengkap.';
+        if(metric==='spend') return 'Audit alokasi budget: kurangi item boros ber-ROAS rendah dan pindahkan budget ke pemenang.';
+        return num(m.cpm) > 60000
+          ? 'CPM tinggi. Perluas audience, perbaiki relevansi iklan, dan cek overlap antar ad set.'
+          : 'CPM masih wajar. Jaga kualitas traffic dan hindari overlap audience yang berlebihan.';
+      }
 
       function gsr(fn,payload){
         return new Promise((resolve,reject)=>{
@@ -89,8 +152,10 @@
 
       function render(){
         const el=document.getElementById('content');
-        if(!STATE.snapshot||!(STATE.snapshot.entities||[]).length && ['Dashboard','Rekomendasi','Brief','Alert','Hierarki','Analitik'].includes(STATE.tab)){
-          el.innerHTML=`<div class='empty'>Belum ada data. Silakan import CSV dulu di tab <b>Import</b>.</div>`;
+        const tabsNeedData=['Dashboard','Rekomendasi','Brief','Alert','Hierarki','Analitik'];
+        const hasData=activeEntities().length>0;
+        if((!STATE.snapshot || !hasData) && tabsNeedData.includes(STATE.tab)){
+          el.innerHTML=`<div class='empty'>Tidak ada data aktif yang bisa ditampilkan. Jika nilai CSV semuanya 0, iklan dianggap <b>off</b> dan hasil disembunyikan. Silakan import data aktif di tab <b>Import</b>.</div>`;
           return;
         }
         if(STATE.tab==='Dashboard') return renderDashboard(el);
@@ -107,26 +172,89 @@
 
       function renderDashboard(el){
         const k=STATE.snapshot.kpi||{};
-        const campaigns=(STATE.snapshot.entities||[]).filter(e=>e.level==='campaign');
-        const max=Math.max(1,...campaigns.map(c=>c.metrics.roas||0));
+        const campaigns=activeEntities('campaign');
+        const allActive=activeEntities();
+        const max=Math.max(1,...campaigns.map(c=>num(c.metrics.roas)||0));
+        const totalSpend=allActive.reduce((acc,e)=>acc+num(e.metrics.spend),0);
+        const levelBreakdown={
+          campaign:activeEntities('campaign').length,
+          adset:activeEntities('adset').length,
+          ad:activeEntities('ad').length
+        };
+        const urgencyBreakdown={
+          Urgent:allActive.filter(e=>e.priority==='Urgent').length,
+          Normal:allActive.filter(e=>e.priority==='Normal').length,
+          Monitor:allActive.filter(e=>e.priority==='Monitor').length
+        };
+        const roasSegments=[
+          {label:'ROAS < 1',count:allActive.filter(e=>num(e.metrics.roas)<1).length,color:'#dc2626'},
+          {label:'ROAS 1 - 2',count:allActive.filter(e=>num(e.metrics.roas)>=1&&num(e.metrics.roas)<2).length,color:'#f59e0b'},
+          {label:'ROAS 2 - 3',count:allActive.filter(e=>num(e.metrics.roas)>=2&&num(e.metrics.roas)<3).length,color:'#2563eb'},
+          {label:'ROAS ≥ 3',count:allActive.filter(e=>num(e.metrics.roas)>=3).length,color:'#16a34a'}
+        ];
+        const maxRoasSeg=Math.max(1,...roasSegments.map(s=>s.count));
+        const maxLevel=Math.max(1,levelBreakdown.campaign,levelBreakdown.adset,levelBreakdown.ad);
+        const maxUrgency=Math.max(1,urgencyBreakdown.Urgent,urgencyBreakdown.Normal,urgencyBreakdown.Monitor);
+
+        if(!allActive.length){
+          el.innerHTML="<div class='empty'>Semua data saat ini bernilai 0 (iklan off), jadi dashboard tidak ditampilkan.</div>";
+          return;
+        }
+
         el.innerHTML=`
           <div class='grid'>
-            <div class='card'><div class='muted'>Total Spend</div><b>${rp(k.total_spend)}</b></div>
+            <div class='card'><div class='muted'>Total Spend Aktif</div><b>${rp(totalSpend)}</b></div>
             <div class='card'><div class='muted'>Total Revenue</div><b>${rp(k.total_revenue)}</b></div>
             <div class='card'><div class='muted'>ROAS Keseluruhan</div><b>${fmt(k.roas_overall)}</b></div>
-            <div class='card'><div class='muted'>Campaign</div><b>${k.campaign_count||0}</b></div>
-            <div class='card'><div class='muted'>Ad Set</div><b>${k.adset_count||0}</b></div>
-            <div class='card'><div class='muted'>Ad</div><b>${k.ad_count||0}</b></div>
-            <div class='card'><div class='muted'>Item Urgent</div><b>${k.urgent_count||0}</b></div>
+            <div class='card'><div class='muted'>Campaign Aktif</div><b>${levelBreakdown.campaign}</b></div>
+            <div class='card'><div class='muted'>Ad Set Aktif</div><b>${levelBreakdown.adset}</b></div>
+            <div class='card'><div class='muted'>Ad Aktif</div><b>${levelBreakdown.ad}</b></div>
+            <div class='card'><div class='muted'>Item Urgent</div><b>${urgencyBreakdown.Urgent}</b></div>
             <div class='card'><div class='muted'>Alert</div><b>${k.alert_count||0}</b></div>
           </div>
-          <h3>ROAS per Campaign</h3>
+          <h3>Visual Distribusi Data</h3>
+          <div class='grid'>
+            <div class='card'>
+              <b>Komposisi Level Aktif</b>
+              <div class='muted'>Campaign vs Ad Set vs Ad</div>
+              <div style='margin-top:10px'>
+                ${[
+                  {label:'Campaign',val:levelBreakdown.campaign,color:'#1d4ed8'},
+                  {label:'Ad Set',val:levelBreakdown.adset,color:'#0891b2'},
+                  {label:'Ad',val:levelBreakdown.ad,color:'#7c3aed'}
+                ].map(x=>`<div style='margin-bottom:8px'><div class='row'><span>${x.label}</span><span class='muted'>${x.val}</span></div><div class='bar'><span style='width:${Math.min(100,(x.val/maxLevel)*100)}%;background:${x.color}'></span></div></div>`).join('')}
+              </div>
+            </div>
+            <div class='card'>
+              <b>Prioritas Optimasi</b>
+              <div class='muted'>Urgent, Normal, Monitor</div>
+              <div style='margin-top:10px'>
+                ${[
+                  {label:'Urgent',val:urgencyBreakdown.Urgent,color:'#dc2626'},
+                  {label:'Normal',val:urgencyBreakdown.Normal,color:'#2563eb'},
+                  {label:'Monitor',val:urgencyBreakdown.Monitor,color:'#4b5563'}
+                ].map(x=>`<div style='margin-bottom:8px'><div class='row'><span class='badge ${prioCls(x.label)}'>${x.label}</span><span class='muted'>${x.val}</span></div><div class='bar'><span style='width:${Math.min(100,(x.val/maxUrgency)*100)}%;background:${x.color}'></span></div></div>`).join('')}
+              </div>
+            </div>
+          </div>
+          <div class='card' style='margin-top:10px'>
+            <b>Distribusi Kualitas ROAS</b>
+            <div class='muted'>Semakin banyak di ROAS tinggi, semakin sehat performa akun</div>
+            <div style='margin-top:10px'>
+              ${roasSegments.map(s=>`<div style='margin-bottom:8px'><div class='row'><span>${s.label}</span><span class='muted'>${s.count} item</span></div><div class='bar'><span style='width:${Math.min(100,(s.count/maxRoasSeg)*100)}%;background:${s.color}'></span></div></div>`).join('')}
+            </div>
+          </div>
+          <h3>ROAS per Campaign (Aktif)</h3>
           ${(campaigns||[]).map(c=>`<div class='card'><div class='row'><strong>${c.name}</strong><span class='muted'>ROAS ${fmt(c.metrics.roas)}</span></div><div class='bar'><span style='width:${Math.min(100,(c.metrics.roas/max)*100)}%'></span></div></div>`).join('')}
         `;
       }
 
       function renderReco(el){
-        const rows=(STATE.snapshot.entities||[]).filter(e=>STATE.priority==='Semua'||e.priority===STATE.priority);
+        const rows=activeEntities().filter(e=>STATE.priority==='Semua'||e.priority===STATE.priority);
+        if(!rows.length){
+          el.innerHTML=`<div class='empty'>Tidak ada data aktif untuk filter ini. Item dengan nilai CSV 0 disembunyikan (iklan off).</div>`;
+          return;
+        }
         el.innerHTML=`
           <div class='row'>
             <label>Filter priority</label>
@@ -143,6 +271,12 @@
             <div class='muted'>${e.status} • Alert: ${(e.alerts||[]).length}</div>
             <div class='muted'>Spend ${rp(e.metrics.spend)} | CTR ${pct(e.metrics.ctr)} | CPM ${rp(e.metrics.cpm)} | Freq ${fmt(e.metrics.freq)} | CPA ${rp(e.metrics.cpa)} | ROAS ${fmt(e.metrics.roas)}</div>
             <p><b>Diagnosis:</b> ${e.diagnosis}<br><b>Action:</b> ${e.action}</p>
+            <div class='card' style='background:#f8fafc'>
+              <b>Detail optimasi yang disarankan</b>
+              <ol style='margin:8px 0 0 18px'>
+                ${optimizationChecklist(e).map(s=>`<li>${s}</li>`).join('')}
+              </ol>
+            </div>
             <div class='row'>
               <button class='secondary' onclick="openBrief('${e.id}')">Brief Creative</button>
               <button class='secondary' onclick="saveNotePrompt('${e.level}','${(e.name||'').replace(/'/g,"\\'")}')">Catatan</button>
@@ -210,24 +344,53 @@
       function renderHierarki(el){
         const h=STATE.snapshot.hierarchy||{};
         const names=Object.keys(h);
-        el.innerHTML=names.map(cn=>{
-          const c=h[cn];
-          const adsets=Object.keys(c.adsets||{}).map(n=>{
-            const node=c.adsets[n];
-            return `<details><summary>Ad Set: ${n}</summary>${(node.ads||[]).map(a=>`<div class='muted'>Ad: ${a.ad_name} | Spend ${rp(a.spend)} | ROAS ${fmt(a.roas)}</div>`).join('')}</details>`;
+        if(!names.length){
+          el.innerHTML="<div class='empty'>Hierarki kosong. Pastikan data campaign/adset/ad sudah terimport.</div>";
+          return;
+        }
+
+        const selected=STATE.hierarchyCampaign||'ALL';
+        const options=['ALL'].concat(names).map(n=>`<option value='${n.replace(/'/g,"&#39;")}' ${selected===n?'selected':''}>${n==='ALL'?'Semua Campaign':n}</option>`).join('');
+        const filteredNames=selected==='ALL' ? names : names.filter(n=>n===selected);
+        const blocks=filteredNames.map(cn=>{
+          const c=h[cn]||{};
+          const adsetNames=Object.keys(c.adsets||{});
+          const adsets=adsetNames.map(n=>{
+            const node=c.adsets[n]||{ads:[]};
+            const ads=(node.ads||[]).filter(a=>!isOffRow(a));
+            const adsHtml=ads.length
+              ? ads.map(a=>`<div class='muted'>Ad: ${a.ad_name||'(tanpa nama)'} | Spend ${rp(a.spend)} | ROAS ${fmt(a.roas)}</div>`).join('')
+              : "<div class='muted'>Tidak ada ad aktif pada ad set ini.</div>";
+            return `<details class='card' style='margin-top:8px'><summary><b>Ad Set: ${n}</b> <span class='muted'>(${ads.length} ad aktif)</span></summary>${adsHtml}</details>`;
           }).join('');
-          const orphan=(c.orphanAds||[]).map(a=>`<div class='muted'>Orphan Ad: ${a.ad_name}</div>`).join('');
-          return `<details class='card' open><summary><b>Campaign: ${cn}</b></summary>${adsets}${orphan}</details>`;
+          const orphanAds=(c.orphanAds||[]).filter(a=>!isOffRow(a));
+          const orphan=orphanAds.length
+            ? `<div class='card' style='margin-top:8px'><b>Orphan Ads</b>${orphanAds.map(a=>`<div class='muted'>Ad: ${a.ad_name||'(tanpa nama)'} | Spend ${rp(a.spend)} | ROAS ${fmt(a.roas)}</div>`).join('')}</div>`
+            : '';
+          const emptyState=(!adsetNames.length && !orphanAds.length) ? "<div class='muted' style='margin-top:8px'>Campaign ini belum punya data aktif di level ad set/ad.</div>" : '';
+          return `<details class='card' open><summary><b>Campaign: ${cn}</b> <span class='muted'>(${adsetNames.length} ad set)</span></summary>${adsets}${orphan}${emptyState}</details>`;
         }).join('');
+
+        el.innerHTML=`
+          <div class='row' style='margin-bottom:10px'>
+            <label>Filter campaign</label>
+            <select onchange="STATE.hierarchyCampaign=this.value;renderHierarki(document.getElementById('content'))">${options}</select>
+          </div>
+          ${blocks || "<div class='empty'>Campaign terpilih tidak memiliki data aktif untuk ditampilkan.</div>"}
+        `;
       }
 
       function renderAnalitik(el){
         const metricOptions=['roas','ctr','cpa','spend','cpm'];
         const selected=window.__metric || 'roas';
-        const rows=(STATE.snapshot.entities||[]).filter(e=>e.level==='campaign');
+        const rows=activeEntities('campaign');
+        if(!rows.length){
+          el.innerHTML="<div class='empty'>Belum ada campaign aktif untuk analitik. Data nilai 0 (iklan off) tidak ditampilkan.</div>";
+          return;
+        }
         const max=Math.max(1,...rows.map(r=>Number(r.metrics[selected]||0)));
         el.innerHTML=`<div class='row'><label>Metric</label><select onchange="window.__metric=this.value;renderAnalitik(document.getElementById('content'))">${metricOptions.map(m=>`<option ${selected===m?'selected':''}>${m}</option>`).join('')}</select></div>
-        ${rows.map(r=>`<div class='card'><div class='row'><b>${r.name}</b><span class='muted'>${selected.toUpperCase()}: ${fmt(r.metrics[selected])}</span></div><div class='bar'><span style='width:${Math.min(100,(r.metrics[selected]/max)*100)}%'></span></div><div class='muted'>Spend ${rp(r.metrics.spend)} vs Revenue ${rp(r.metrics.revenue)}</div></div>`).join('')}`;
+        ${rows.map(r=>`<div class='card'><div class='row'><b>${r.name}</b><span class='badge ${prioCls(r.priority)}'>${r.priority||'N/A'}</span><span class='muted'>${selected.toUpperCase()}: ${fmt(r.metrics[selected])}</span></div><div class='bar'><span style='width:${Math.min(100,(r.metrics[selected]/max)*100)}%'></span></div><div class='muted'>Spend ${rp(r.metrics.spend)} vs Revenue ${rp(r.metrics.revenue)}</div><div class='card' style='background:#f8fafc;margin-top:8px'><b>Keterangan optimasi</b><div class='muted'>${analyticOptimizationNote(r, selected)}</div></div></div>`).join('')}`;
       }
 
       function renderAI(el){

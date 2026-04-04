@@ -359,7 +359,7 @@ function LoginPage(props){
   var st2=useState(""),password=st2[0],setPassword=st2[1];
   var st3=useState(""),error=st3[0],setError=st3[1];
   var st4=useState(false),loading=st4[0],setLoading=st4[1];
-  
+
   function handleSubmit(e){
     e.preventDefault();
     setError("");setLoading(true);
@@ -375,7 +375,7 @@ function LoginPage(props){
       })
       .catch(function(err){setLoading(false);setError(err.message||"Terjadi kesalahan");});
   }
-  
+
   return h("div",{style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20}},
     h("div",{className:"card",style:{maxWidth:380,width:"100%"}},
       h("div",{style:{textAlign:"center",marginBottom:24}},
@@ -994,8 +994,20 @@ function App(){
 
   var topLevel=data.campaigns.length?data.campaigns:data.adsets.length?data.adsets:data.ads;
 
+  // Filter out items with zero spend/impressions (inactive ads)
+  var isActive=function(item){
+    var spend=Number(item.spend)||0;
+    var impressions=Number(item.impressions)||0;
+    return spend>0||impressions>0;
+  };
+
+  var activeCampaigns=data.campaigns.filter(isActive);
+  var activeAdsets=data.adsets.filter(isActive);
+  var activeAds=data.ads.filter(isActive);
+  var activeTopLevel=activeCampaigns.length?activeCampaigns:activeAdsets.length?activeAdsets:activeAds;
+
   var allItems=useMemo(function(){
-    return [].concat(data.campaigns,data.adsets,data.ads).map(function(c){
+    return [].concat(activeCampaigns,activeAdsets,activeAds).map(function(c){
       return Object.assign({},c,{_level:c.level||"campaign",_diag:diagnose(c,c.level||"campaign"),_alerts:checkTh(c,data.thresholds)});
     });
   },[data]);
@@ -1014,16 +1026,16 @@ function App(){
     }).filter(Boolean);
   },[periodA,periodB]);
 
-  var totalSpend=topLevel.reduce(function(s,c){return s+(Number(c.spend)||0);},0);
-  var totalRevenue=topLevel.reduce(function(s,c){return s+(Number(c.revenue)||0);},0);
+  var totalSpend=activeTopLevel.reduce(function(s,c){return s+(Number(c.spend)||0);},0);
+  var totalRevenue=activeTopLevel.reduce(function(s,c){return s+(Number(c.revenue)||0);},0);
   var overallRoas=totalSpend?totalRevenue/totalSpend:null;
 
   var chartData=useMemo(function(){
-    return topLevel.map(function(c){
+    return activeTopLevel.map(function(c){
       var m=calcM(c);
-      return{name:c.name.length>14?c.name.slice(0,14)+"...":c.name,spend:m.spend,revenue:Number(c.revenue)||0,roas:m.roas?parseFloat(m.roas.toFixed(2)):0,ctr:m.ctr?parseFloat(m.ctr.toFixed(2)):0,cpa:Math.round(m.cpa||0),cpm:Math.round(m.cpm||0)};
-    });
-  },[topLevel]);
+      return{name:c.name.length>14?c.name.slice(0,14)+"...":c.name,fullName:c.name,spend:m.spend,revenue:Number(c.revenue)||0,roas:m.roas?parseFloat(m.roas.toFixed(2)):0,ctr:m.ctr?parseFloat(m.ctr.toFixed(2)):0,cpa:Math.round(m.cpa||0),cpm:Math.round(m.cpm||0),impressions:Number(c.impressions)||0,results:Number(c.results)||0};
+    }).sort(function(a,b){return b.spend-a.spend;});
+  },[activeTopLevel]);
 
   var metricOpts=[{key:"roas",label:"ROAS",color:"#1d9e75"},{key:"ctr",label:"CTR%",color:"#185fa5"},{key:"cpa",label:"CPA",color:"#ba7517"},{key:"spend",label:"Spend",color:"#534ab7"},{key:"cpm",label:"CPM",color:"#e24b4a"}];
   var selM=metricOpts.find(function(m){return m.key===analyticsMetric;})||metricOpts[0];
