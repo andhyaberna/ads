@@ -1,0 +1,81 @@
+{
+  "health": {
+    "ok": true,
+    "message": "healthy"
+  },
+  "import_csv_success": {
+    "ok": true,
+    "import_batch_id": "batch_xxx",
+    "row_count": 120,
+    "warnings": []
+  },
+  "snapshot": {
+    "ok": true,
+    "data": {
+      "kpi": {
+        "total_spend": 3500000,
+        "total_revenue": 7900000,
+        "roas_overall": 2.257,
+        "campaign_count": 3,
+        "adset_count": 7,
+        "ad_count": 18,
+        "urgent_count": 9,
+        "alert_count": 12
+      },
+      "entities": [
+        {
+          "id": "campaign_xxx",
+          "level": "campaign",
+          "name": "C1 - Skincare Sale",
+          "metrics": {
+            "spend": 1200000,
+            "impressions": 120000,
+            "ctr": 1.8,
+            "results": 18,
+            "revenue": 3600000,
+            "roas": 3,
+            "cpm": 10000,
+            "cpa": 66666.67,
+            "clicks": 2160,
+            "atcRate": 16.2,
+            "conversionRate": 44.1,
+            "freq": 2.1
+          },
+          "status": "Perform - Scale",
+          "priority": "Urgent",
+          "diagnosis": "ROAS sangat baik.",
+          "action": "Naikkan budget 25%, jangan ubah targeting/creative.",
+          "alerts": []
+        }
+      ],
+      "thresholds": [
+        { "metric_key": "roas", "enabled": "true", "rule_type": "min", "value": 1.5, "label": "ROAS min" }
+      ]
+    }
+  },
+  "compare_periods": {
+    "ok": true,
+    "rows": [
+      {
+        "name": "C1 - Skincare Sale",
+        "roas_a": 1.9,
+        "roas_b": 2.4,
+        "delta_roas_pct": 26.31,
+        "ctr_a": 1.2,
+        "ctr_b": 1.7,
+        "delta_ctr_pct": 41.67,
+        "cpa_a": 95000,
+        "cpa_b": 70000,
+        "delta_cpa_pct": -26.32
+      }
+    ]
+  },
+  "ask_ai": {
+    "ok": true,
+    "answer": "Prioritas hari ini: pause 2 ad dengan ROAS < 1 dan frequency > 4, scale 1 ad dengan ROAS > 3 dan CTR > 2.5."
+  },
+  "error": {
+    "ok": false,
+    "error": "Missing action"
+  }
+}

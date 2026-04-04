@@ -1,0 +1,6 @@
+Campaign Name,Ad Set Name,Ad Name,Amount Spent (IDR),Impressions,CTR,Results,Purchase Conversion Value,Purchase ROAS,CPM (Cost per 1,000 Impressions),Reach,Frequency,Add to Cart,Cost per Result,Date Start,Date End
+C1 - Skincare Sale,A1 - Women 25-34,Ad 1 - Hook Problem,350000,42000,1.6,6,1200000,3.43,8333,26000,1.62,20,58333,2026-04-01,2026-04-07
+C1 - Skincare Sale,A1 - Women 25-34,Ad 2 - Hook Curiosity,270000,39000,0.7,2,220000,0.81,6923,24000,1.63,11,135000,2026-04-01,2026-04-07
+C1 - Skincare Sale,A2 - Broad,Ad 3 - UGC Test,480000,51000,2.8,8,1700000,3.54,9411,29000,1.76,24,60000,2026-04-01,2026-04-07
+C2 - Supplement New,C2A1 - Interest,Ad 4 - Before After,520000,61000,1.1,3,460000,0.88,8524,30000,2.03,15,173333,2026-04-01,2026-04-07
+C2 - Supplement New,C2A1 - Interest,Ad 5 - Founder Story,620000,70000,0.6,1,90000,0.15,8857,31000,2.26,9,620000,2026-04-01,2026-04-07
