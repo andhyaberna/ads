@@ -38,7 +38,7 @@
 
     <script>
       const TAB_LIST = ['Dashboard','Rekomendasi','Brief','Periode','Alert','Hierarki','Analitik','AI','Import','Settings'];
-      const STATE = {tab:'Dashboard',snapshot:null,priority:'Semua',compareRows:[],aiConfig:null};
+      const STATE = {tab:'Dashboard',snapshot:null,priority:'Semua',compareRows:[],aiConfig:null,systemConfig:null,isAdmin:false};
 
       function fmt(n,d=2){n=Number(n||0);return n.toLocaleString('id-ID',{maximumFractionDigits:d,minimumFractionDigits:0})}
       function rp(n){return `Rp ${Number(n||0).toLocaleString('id-ID',{maximumFractionDigits:0})}`}
@@ -56,6 +56,7 @@
         await gsr('uiBootstrap');
         await loadSnapshot();
         await loadAiConfig();
+        await loadSystemConfig();
         render();
       }
 
@@ -67,6 +68,17 @@
       async function loadAiConfig(){
         const r = await gsr('uiGetAiConfig');
         STATE.aiConfig = r.data || {provider:'builtin',has_openai_key:false,has_gemini_key:false,has_claude_key:false};
+      }
+
+      async function loadSystemConfig(){
+        try {
+          const r = await gsr('uiGetSystemConfigStatus');
+          STATE.systemConfig = r.data || null;
+          STATE.isAdmin = !!r.ok;
+        } catch (e) {
+          STATE.systemConfig = null;
+          STATE.isAdmin = false;
+        }
       }
 
       function renderTabs(){
@@ -240,18 +252,40 @@
         el.innerHTML=`<div class='card'><h3>Import CSV Meta Ads</h3>
           <div class='row'><select id='impLevel'><option value='campaign'>Campaign</option><option value='adset'>Ad Set</option><option value='ad'>Ad</option></select>
           <input id='periodLabel' placeholder='Period label (contoh: 2026-04-01 s/d 2026-04-07)' style='min-width:320px' />
-          <input type='file' id='impCsv' accept='.csv' /><button onclick='runImport()'>Upload</button></div>
-          <div class='muted'>Upload terpisah per level: campaign/adset/ad.</div>
+          <input id='sheetName' placeholder='Nama worksheet (opsional, untuk .xlsx)' style='min-width:240px' />
+          <input type='file' id='impCsv' accept='.csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' /><button onclick='runImport()'>Upload</button></div>
+          <div class='muted'>Upload terpisah per level: campaign/adset/ad. Mendukung CSV dan Excel (.xlsx).</div>
         </div>`;
       }
 
       async function runImport(){
         const file=(document.getElementById('impCsv').files||[])[0];
-        if(!file) return alert('Pilih file CSV');
+        if(!file) return alert('Pilih file CSV atau XLSX');
         const level=document.getElementById('impLevel').value;
         const periodLabel=document.getElementById('periodLabel').value||'';
-        const csv=await file.text();
-        const r=await gsr('uiImportCsv',{level,csv_text:csv,file_name:file.name,period_label:periodLabel});
+        const worksheetName=(document.getElementById('sheetName').value||'').trim();
+        const isXlsx = /\.xlsx$/i.test(file.name) || (file.type||'').indexOf('spreadsheetml') >= 0;
+        const payload = { level, file_name:file.name, period_label:periodLabel, worksheet_name:worksheetName };
+
+        try {
+          if (isXlsx) {
+            const buffer = await file.arrayBuffer();
+            payload.file_type = 'xlsx';
+            payload.excel_base64 = arrayBufferToBase64_(buffer);
+          } else {
+            payload.file_type = 'csv';
+            payload.csv_text = await file.text();
+          }
+        } catch (_readErr) {
+          return alert('Gagal membaca file. Pastikan file tidak corrupt dan coba lagi.');
+        }
+
+        let r;
+        try {
+          r = await gsr('uiImportCsv', payload);
+        } catch (_apiErr) {
+          return alert('Import gagal karena koneksi ke Apps Script/Sheets bermasalah. Coba beberapa saat lagi.');
+        }
         if(!r.ok) return alert(r.error||'Import gagal');
         alert(`Import sukses: ${r.row_count} baris`);
         await loadSnapshot();
@@ -260,9 +294,19 @@
         render();
       }
 
+      function arrayBufferToBase64_(buffer){
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        const chunk = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunk) {
+          const slice = bytes.subarray(i, i + chunk);
+          binary += String.fromCharCode.apply(null, slice);
+        }
+        return btoa(binary);
+      }
+
       function renderSettings(el){
-        const map={};
-        (STATE.snapshot.settings||[]).forEach(s=>{ map[s.key_name]=s.key_value; });
+        const cfg = STATE.systemConfig || { WORKER_URL:'', AI_MODE:'ad-analysis-mini', APP_ALLOWED_DOMAIN:'', has_worker_token:false, has_signing_secret:false };
         const ai = STATE.aiConfig || {provider:'builtin',has_openai_key:false,has_gemini_key:false,has_claude_key:false};
         el.innerHTML=`<div class='card'>
           <h3>Settings</h3>
@@ -301,16 +345,18 @@
 
           <hr style='margin:16px 0;border:none;border-top:1px solid #e5e7eb' />
           <h4>Konfigurasi Sistem</h4>
+          ${!STATE.isAdmin ? `<div class='muted'>Anda bukan admin. Konfigurasi sistem hanya bisa dilihat/diubah oleh admin.</div>` : ''}
           <div class='grid'>
-            <div><div class='muted'>WORKER_URL</div><input id='setWorkerUrl' value='${map.WORKER_URL||''}' style='width:100%'/></div>
-            <div><div class='muted'>WORKER_TOKEN</div><input id='setWorkerToken' value='${map.WORKER_TOKEN||''}' style='width:100%'/></div>
-            <div><div class='muted'>WORKER_SIGNING_SECRET (opsional)</div><input id='setWorkerSigningSecret' value='${map.WORKER_SIGNING_SECRET||''}' style='width:100%'/></div>
-            <div><div class='muted'>AI_MODE</div><input id='setAiMode' value='${map.AI_MODE||'ad-analysis-mini'}' style='width:100%'/></div>
+            <div><div class='muted'>WORKER_URL</div><input id='setWorkerUrl' value='${cfg.WORKER_URL||''}' style='width:100%' ${STATE.isAdmin?'':'disabled'}/></div>
+            <div><div class='muted'>WORKER_TOKEN</div><input id='setWorkerToken' type='password' placeholder='Isi hanya jika ingin update' style='width:100%' ${STATE.isAdmin?'':'disabled'}/><div class='muted'>Status: ${cfg.has_worker_token ? `Tersimpan (${cfg.worker_token_masked || '***'})` : 'Belum diisi'}</div></div>
+            <div><div class='muted'>WORKER_SIGNING_SECRET (opsional)</div><input id='setWorkerSigningSecret' type='password' placeholder='Isi hanya jika ingin update' style='width:100%' ${STATE.isAdmin?'':'disabled'}/><div class='muted'>Status: ${cfg.has_signing_secret ? `Tersimpan (${cfg.signing_secret_masked || '***'})` : 'Belum diisi'}</div></div>
+            <div><div class='muted'>AI_MODE</div><input id='setAiMode' value='${cfg.AI_MODE||'ad-analysis-mini'}' style='width:100%' ${STATE.isAdmin?'':'disabled'}/></div>
+            <div><div class='muted'>APP_ALLOWED_DOMAIN</div><input id='setAllowedDomain' value='${cfg.APP_ALLOWED_DOMAIN||''}' placeholder='contoh: cepat.top' style='width:100%' ${STATE.isAdmin?'':'disabled'}/></div>
           </div>
           <div class='row' style='margin-top:10px'>
-            <button onclick='saveSettings()'>Simpan Settings</button>
-            <button class='secondary' onclick='saveThresholds()'>Simpan Threshold</button>
-            <button class='secondary' onclick='resetData()'>Reset Data</button>
+            <button onclick='saveSettings()' ${STATE.isAdmin?'':'disabled'}>Simpan Settings</button>
+            <button class='secondary' onclick='saveThresholds()' ${STATE.isAdmin?'':'disabled'}>Simpan Threshold</button>
+            <button class='secondary' onclick='resetData()' ${STATE.isAdmin?'':'disabled'}>Reset Data</button>
           </div>
           <h4>Threshold</h4>
           <div id='thRows'>${(STATE.snapshot.thresholds||[]).map((t,i)=>`<div class='row' data-idx='${i}'><input value='${t.metric_key}' disabled><select class='th-enabled'><option value='true' ${String(t.enabled)==='true'?'selected':''}>true</option><option value='false' ${String(t.enabled)==='false'?'selected':''}>false</option></select><select class='th-rule'><option value='min' ${t.rule_type==='min'?'selected':''}>min</option><option value='max' ${t.rule_type==='max'?'selected':''}>max</option></select><input class='th-value' value='${t.value}'><input class='th-label' value='${t.label}'></div>`).join('')}</div>
@@ -318,14 +364,19 @@
       }
 
       async function saveSettings(){
+        if(!STATE.isAdmin) return alert('Hanya admin yang bisa ubah konfigurasi sistem.');
         const items=[
           {key_name:'WORKER_URL',key_value:document.getElementById('setWorkerUrl').value.trim()},
           {key_name:'WORKER_TOKEN',key_value:document.getElementById('setWorkerToken').value.trim()},
           {key_name:'WORKER_SIGNING_SECRET',key_value:document.getElementById('setWorkerSigningSecret').value.trim()},
-          {key_name:'AI_MODE',key_value:document.getElementById('setAiMode').value.trim()}
+          {key_name:'AI_MODE',key_value:document.getElementById('setAiMode').value.trim()},
+          {key_name:'APP_ALLOWED_DOMAIN',key_value:document.getElementById('setAllowedDomain').value.trim()}
         ];
         await gsr('uiSaveSettings',{items});
-        await loadSnapshot();render();alert('Settings tersimpan');
+        await loadSnapshot();
+        await loadSystemConfig();
+        render();
+        alert('Settings tersimpan');
       }
 
       async function saveAiConfig(){
@@ -348,6 +399,7 @@
       }
 
       async function saveThresholds(){
+        if(!STATE.isAdmin) return alert('Hanya admin yang bisa ubah threshold.');
         const base=STATE.snapshot.thresholds||[];
         const rows=[...document.querySelectorAll('#thRows .row')];
         const items=rows.map((r,i)=>({
@@ -362,6 +414,7 @@
       }
 
       async function resetData(){
+        if(!STATE.isAdmin) return alert('Hanya admin yang bisa reset data.');
         if(!confirm('Reset data campaigns/adsets/ads/notes/import_logs?')) return;
         await gsr('uiResetData');
         await loadSnapshot();

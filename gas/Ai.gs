@@ -1,7 +1,9 @@
 function getSettingsMap_() {
-  var rows = getSheetRows_('settings');
+  var rows = sanitizeSettingsForClient_(getSheetRows_('settings'));
   var map = {};
   rows.forEach(function (r) { map[r.key_name] = r.key_value; });
+  map.WORKER_TOKEN = getScriptConfig_('WORKER_TOKEN', '');
+  map.WORKER_SIGNING_SECRET = getScriptConfig_('WORKER_SIGNING_SECRET', '');
   return map;
 }
 
@@ -93,12 +95,17 @@ function getActiveUserIdentifier_() {
   } catch (err) {
     email = '';
   }
-  if (email) return email.toLowerCase();
+  if (email) return pseudoUserId_(email.toLowerCase());
   try {
-    return Session.getTemporaryActiveUserKey() || 'anonymous';
+    return pseudoUserId_(Session.getTemporaryActiveUserKey() || 'anonymous');
   } catch (err2) {
-    return 'anonymous';
+    return pseudoUserId_('anonymous');
   }
+}
+
+function pseudoUserId_(raw) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(raw || ''));
+  return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/, '').slice(0, 24);
 }
 
 function askAiByWorker_(question, snapshot) {

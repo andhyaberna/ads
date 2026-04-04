@@ -4,6 +4,11 @@
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) || '';
   if (action) {
+    try {
+      requireInternalApiToken_(e && e.parameter ? e.parameter.internal_token : '');
+    } catch (authErr) {
+      return jsonResponse({ ok: false, error: authErr.message || 'Unauthorized' });
+    }
     return handleApiGet(action, e.parameter || {});
   }
 
@@ -25,6 +30,13 @@ function doPost(e) {
 
   var action = payload.action || (e && e.parameter && e.parameter.action) || '';
   if (!action) return jsonResponse({ ok: false, error: 'Missing action' });
+
+  try {
+    requireInternalApiToken_(payload.internal_token || (e && e.parameter ? e.parameter.internal_token : ''));
+  } catch (authErr) {
+    return jsonResponse({ ok: false, error: authErr.message || 'Unauthorized' });
+  }
+
   return handleApiPost(action, payload);
 }
 

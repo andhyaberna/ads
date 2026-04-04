@@ -20,8 +20,10 @@
 
 ## 3) Setup Google Sheets
 
-1. Buat file Google Sheets baru dengan nama: **Ad Campaign Tracker DB**
-2. Tidak perlu manual buat sheet jika pakai `uiBootstrap` karena script akan membuat otomatis:
+1. Gunakan Google Sheets target utama ini:
+   - **Sheet ID:** `1hbhtYLqzSIRlZoIiB0my-05tSIXdgAOjPbgpf7dJIEs`
+2. Pastikan akun Apps Script punya akses edit ke sheet tersebut.
+3. Tidak perlu manual buat sheet jika pakai `uiBootstrap` karena script akan membuat otomatis:
    - campaigns
    - adsets
    - ads
@@ -29,7 +31,7 @@
    - notes
    - settings
    - import_logs
-3. Threshold default otomatis di-seed:
+4. Threshold default otomatis di-seed:
    - roas | true | min | 1.5 | ROAS min
    - cpa | false | max | 150000 | CPA max
    - ctr | true | min | 1 | CTR min %
@@ -59,6 +61,9 @@
 4. Who has access: **Anyone within domain** (atau sesuai kebijakan internal)
 5. Deploy, salin URL Web App
 
+Gunakan endpoint aktif berikut (sudah terhubung di kode):
+- `https://script.google.com/macros/s/AKfycbyEQM12lmuZ_Q7NrBC_OVEHXDHN49oLEe52GLuMbFbSiH3HSzz6PK1S7DULwnfuTp4U/exec`
+
 ---
 
 ## 5) Setup Cloudflare Worker
@@ -73,6 +78,7 @@ Kebutuhan user:
    - `worker/wrangler.toml`
 3. Ubah `kv_namespaces.id` di `wrangler.toml`
 4. Set secrets/env:
+   - `INTERNAL_API_TOKEN` (wajib jika ingin pakai action API `doGet/doPost?action=...`)
    - `INTERNAL_TOKEN`
    - `SIGNING_SECRET` (disarankan, untuk HMAC internal request)
    - `WEBHOOK_TOKEN`
@@ -91,6 +97,11 @@ Kebutuhan user:
    - `AI_CACHE_TTL_SEC` (default 300)
    - `WEBHOOK_MAX_SKEW_MS` (default 300000)
    - `GAS_WEB_APP_URL` (opsional jika pakai route `/proxy/apps-script`)
+
+5. Set Script Properties di Apps Script (Project Settings):
+   - `ADMIN_EMAILS` = daftar email admin dipisah koma
+   - `APP_ALLOWED_DOMAIN` = domain internal (contoh: `cepat.top`)
+   - `INTERNAL_API_TOKEN` = token internal untuk endpoint action API
 5. Deploy:
    ```bash
    wrangler deploy
@@ -135,7 +146,15 @@ Flow AI:
 
 ## 7) Dummy Data Cepat
 
-Setelah deploy, gunakan tab Import untuk upload CSV contoh (`docs/IMPORT_TEMPLATE.csv`) pada level:
+Setelah deploy, gunakan tab Import untuk upload file contoh pada level:
+- Excel template siap import: `templates/meta_ads_import_template.xlsx`
+- CSV template: `docs/IMPORT_TEMPLATE.csv`
+
+Flow import mendukung:
+- `.csv` (existing flow)
+- `.xlsx` (parser workbook internal; bisa isi `worksheet_name` opsional)
+
+Untuk upload bertahap, gunakan level:
 - campaign
 - adset
 - ad
@@ -158,3 +177,18 @@ Campaign contoh:
 - Header CSV Meta Ads bisa campuran EN/ID sesuai mapping di `Parser.gs`
 - Untuk AI, keamanan bergantung pada penyimpanan token di settings + env Worker
 - MVP ini menargetkan internal tool, bukan high-scale public product
+
+## 9) Baseline Keamanan Minimum
+
+- Jangan simpan secret sistem di sheet `settings` (gunakan Script Properties)
+- Jangan tampilkan raw secret ke UI (hanya status masked)
+- Batasi role admin via `ADMIN_EMAILS`
+- Batasi domain user via `APP_ALLOWED_DOMAIN`
+- Rotasi `WORKER_TOKEN`, `WORKER_SIGNING_SECRET`, `INTERNAL_API_TOKEN` secara berkala
+
+## 10) Integrasi Live ads.cepat.top
+
+- Domain `https://ads.cepat.top/` diarahkan ke Web App GAS aktif.
+- Worker default sudah memuat `GAS_WEB_APP_URL` endpoint aktif.
+- Data flow live: **Excel/CSV -> GAS import -> Google Sheets target ID -> snapshot UI ads.cepat.top**.
+- Jika endpoint/GSheets gagal diakses, UI import menampilkan pesan error aman + import log status `failed`.

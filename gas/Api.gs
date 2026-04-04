@@ -52,20 +52,57 @@ function handleApiPost(action, payload) {
 
 function apiImportCsv_(payload) {
   ensureDbReady();
+  payload = payload || {};
   var level = String(payload.level || '').toLowerCase();
   var csvText = payload.csv_text || '';
+  var excelBase64 = payload.excel_base64 || '';
+  var fileType = String(payload.file_type || '').toLowerCase();
   var fileName = payload.file_name || 'meta_export.csv';
   var periodLabel = payload.period_label || '';
+  var worksheetName = payload.worksheet_name || '';
+  var now = new Date().toISOString();
+  var batchId = 'batch_' + Utilities.getUuid();
 
   if (!level || ['campaign','adset','ad'].indexOf(level) < 0) {
     return { ok: false, error: 'level harus campaign/adset/ad' };
   }
-  if (!csvText) return { ok: false, error: 'csv_text kosong' };
 
-  var parsed = parseCsvImport_(csvText, level, fileName, periodLabel);
+  var parsed;
+  try {
+    var isXlsx = fileType === 'xlsx' || /\.xlsx$/i.test(fileName) || !!excelBase64;
+    if (isXlsx) {
+      if (!excelBase64) return { ok: false, error: 'excel_base64 kosong' };
+      parsed = parseExcelImport_(excelBase64, level, fileName, periodLabel, worksheetName);
+    } else {
+      if (!csvText) return { ok: false, error: 'csv_text kosong' };
+      parsed = parseCsvImport_(csvText, level, fileName, periodLabel);
+    }
+  } catch (parseErr) {
+    appendRows_('import_logs', [{
+      import_batch_id: batchId,
+      level: level,
+      file_name: fileName,
+      row_count: 0,
+      imported_at: now,
+      status: 'failed',
+      message: parseErr.message || String(parseErr)
+    }]);
+    return { ok: false, error: 'Gagal parsing file import: ' + (parseErr.message || String(parseErr)) };
+  }
+
   var rows = parsed.rows;
-  var batchId = 'batch_' + Utilities.getUuid();
-  var now = new Date().toISOString();
+  if (!rows.length) {
+    appendRows_('import_logs', [{
+      import_batch_id: batchId,
+      level: level,
+      file_name: fileName,
+      row_count: 0,
+      imported_at: now,
+      status: 'failed',
+      message: 'Tidak ada data valid yang bisa diimport'
+    }]);
+    return { ok: false, error: 'Tidak ada data valid yang bisa diimport. Cek header/isi file.' };
+  }
 
   var target = level === 'campaign' ? 'campaigns' : level === 'adset' ? 'adsets' : 'ads';
   var normalized = rows.map(function (r) {
@@ -85,14 +122,14 @@ function apiImportCsv_(payload) {
     row_count: normalized.length,
     imported_at: now,
     status: 'success',
-    message: parsed.warnings.join('; ')
+    message: (parsed.warnings || []).join('; ')
   }]);
 
   return {
     ok: true,
     import_batch_id: batchId,
     row_count: normalized.length,
-    warnings: parsed.warnings
+    warnings: parsed.warnings || []
   };
 }
 
@@ -103,7 +140,7 @@ function apiGetSnapshot_() {
   var ads = getSheetRows_('ads');
   var thresholds = getSheetRows_('thresholds');
   var notes = getSheetRows_('notes');
-  var settings = getSheetRows_('settings');
+  var settings = sanitizeSettingsForClient_(getSheetRows_('settings'));
 
   var entities = [];
 
@@ -193,7 +230,24 @@ function apiSaveNote_(payload) {
 }
 
 function apiSaveSettings_(payload) {
-  upsertSettings_(payload.items || []);
+  assertAdminUser_();
+  var items = payload.items || [];
+  var nonSensitive = [];
+  items.forEach(function (i) {
+    var k = String(i.key_name || '').trim();
+    if (!k) return;
+    var v = String(i.key_value || '').trim();
+    if (k === 'APP_ALLOWED_DOMAIN') {
+      setScriptConfig_('APP_ALLOWED_DOMAIN', v.toLowerCase());
+      return;
+    }
+    if (isSensitiveSettingKey_(k)) {
+      if (v) setScriptConfig_(k, v);
+    } else {
+      nonSensitive.push({ key_name: k, key_value: v });
+    }
+  });
+  if (nonSensitive.length) upsertSettings_(nonSensitive);
   return { ok: true };
 }
 
@@ -244,24 +298,46 @@ function apiAskAi_(payload) {
 }
 
 function apiGetAiConfig_() {
+  assertAuthorizedUser_();
   return getUserAiConfigStatus_();
 }
 
 function apiSaveAiConfig_(payload) {
+  assertAuthorizedUser_();
   return saveUserAiConfig_(payload || {});
+}
+
+function apiGetSystemConfigStatus_() {
+  assertAdminUser_();
+  var nonSensitiveMap = {};
+  sanitizeSettingsForClient_(getSheetRows_('settings')).forEach(function (r) {
+    nonSensitiveMap[r.key_name] = r.key_value;
+  });
+  var workerToken = getScriptConfig_('WORKER_TOKEN', '');
+  var signingSecret = getScriptConfig_('WORKER_SIGNING_SECRET', '');
+  return {
+    WORKER_URL: nonSensitiveMap.WORKER_URL || '',
+    AI_MODE: nonSensitiveMap.AI_MODE || 'ad-analysis-mini',
+    APP_ALLOWED_DOMAIN: getScriptConfig_('APP_ALLOWED_DOMAIN', ''),
+    has_worker_token: !!workerToken,
+    has_signing_secret: !!signingSecret,
+    worker_token_masked: maskSecretStatus_(workerToken),
+    signing_secret_masked: maskSecretStatus_(signingSecret)
+  };
 }
 
 /**
  * Wrappers for HTMLService google.script.run
  */
-function uiBootstrap() { ensureDbReady(); return { ok: true }; }
-function uiSnapshot() { return { ok: true, data: apiGetSnapshot_() }; }
-function uiImportCsv(payload) { return apiImportCsv_(payload); }
-function uiSaveThresholds(payload) { return apiSaveThresholds_(payload); }
-function uiSaveNote(payload) { return apiSaveNote_(payload); }
-function uiSaveSettings(payload) { return apiSaveSettings_(payload); }
-function uiResetData() { return apiResetData_(); }
-function uiComparePeriods(payload) { return apiComparePeriods_(payload); }
-function uiAskAi(payload) { return apiAskAi_(payload); }
-function uiGetAiConfig() { return { ok: true, data: apiGetAiConfig_() }; }
-function uiSaveAiConfig(payload) { return apiSaveAiConfig_(payload); }
+function uiBootstrap() { assertAuthorizedUser_(); ensureDbReady(); return { ok: true }; }
+function uiSnapshot() { assertAuthorizedUser_(); return { ok: true, data: apiGetSnapshot_() }; }
+function uiImportCsv(payload) { assertAdminUser_(); enforceUserRateLimit_('import_csv', 20, 60); return apiImportCsv_(payload); }
+function uiSaveThresholds(payload) { assertAdminUser_(); return apiSaveThresholds_(payload); }
+function uiSaveNote(payload) { assertAuthorizedUser_(); return apiSaveNote_(payload); }
+function uiSaveSettings(payload) { assertAdminUser_(); return apiSaveSettings_(payload); }
+function uiResetData() { assertAdminUser_(); return apiResetData_(); }
+function uiComparePeriods(payload) { assertAuthorizedUser_(); enforceUserRateLimit_('compare_periods', 30, 60); return apiComparePeriods_(payload); }
+function uiAskAi(payload) { assertAuthorizedUser_(); enforceUserRateLimit_('ask_ai', 30, 60); return apiAskAi_(payload); }
+function uiGetAiConfig() { assertAuthorizedUser_(); return { ok: true, data: apiGetAiConfig_() }; }
+function uiSaveAiConfig(payload) { assertAuthorizedUser_(); enforceUserRateLimit_('save_ai_config', 20, 60); return apiSaveAiConfig_(payload); }
+function uiGetSystemConfigStatus() { assertAdminUser_(); return { ok: true, data: apiGetSystemConfigStatus_() }; }

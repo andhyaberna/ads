@@ -1,4 +1,5 @@
 var DB_NAME = 'Ad Campaign Tracker DB';
+var DB_TARGET_SHEET_ID = '1hbhtYLqzSIRlZoIiB0my-05tSIXdgAOjPbgpf7dJIEs';
 
 var SHEETS = {
   campaigns: ['id','import_batch_id','period_label','campaign_name','spend','impressions','ctr','results','revenue','roas','cpm','reach','freq','atc','cpa','date_start','date_end','created_at'],
@@ -30,11 +31,21 @@ function ensureDbReady() {
 }
 
 function getOrCreateSpreadsheet_() {
-  var files = DriveApp.getFilesByName(DB_NAME);
-  if (files.hasNext()) {
-    return SpreadsheetApp.open(files.next());
+  var configuredId = '';
+  try {
+    configuredId = String(getScriptConfig_('DB_SHEET_ID', DB_TARGET_SHEET_ID) || DB_TARGET_SHEET_ID).trim();
+  } catch (err) {
+    configuredId = DB_TARGET_SHEET_ID;
   }
-  return SpreadsheetApp.create(DB_NAME);
+  if (!configuredId) {
+    throw new Error('DB_SHEET_ID tidak dikonfigurasi');
+  }
+
+  try {
+    return SpreadsheetApp.openById(configuredId);
+  } catch (err2) {
+    throw new Error('Gagal akses Google Sheets target. Pastikan ID benar dan Apps Script punya akses: ' + configuredId);
+  }
 }
 
 function getSheetRows_(sheetName) {
