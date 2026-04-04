@@ -9,6 +9,7 @@ SIGNATURE_MAX_SKEW_MS = "300000"
 NONCE_TTL_SEC = "600"
 AI_CACHE_TTL_SEC = "300"
 WEBHOOK_MAX_SKEW_MS = "300000"
+GEMINI_MODEL = "gemini-1.5-flash"
 
 [[kv_namespaces]]
 binding = "RATE_LIMIT_KV"

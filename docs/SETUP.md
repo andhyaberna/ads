@@ -101,6 +101,18 @@ Di tab **Settings** aplikasi:
 - `WORKER_SIGNING_SECRET` = sama dengan `SIGNING_SECRET` di Worker (boleh dikosongkan jika fallback ke WORKER_TOKEN)
 - `AI_MODE` = model alias, contoh `gpt-4o-mini`
 
+### Konfigurasi AI Per User
+
+Di section **Konfigurasi AI Pribadi (Per User)**:
+- Pilih provider aktif: **OpenAI** atau **Gemini**
+- Isi API key provider masing-masing (boleh isi dua-duanya)
+- Status key tampil sebagai indikator tersimpan/belum + masked value
+- Key tidak ditampilkan full lagi setelah disimpan
+
+Catatan:
+- Konfigurasi ini disimpan **per user** (User Properties), bukan global
+- Request AI akan memakai provider+credential milik user yang sedang login
+
 Flow AI:
 1. User bertanya di tab AI
 2. Apps Script kirim ringkasan data + pertanyaan ke Worker `/ai/analyze`

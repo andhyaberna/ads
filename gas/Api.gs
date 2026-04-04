@@ -7,6 +7,9 @@ function handleApiGet(action, params) {
     if (action === 'snapshot') {
       return jsonResponse({ ok: true, data: apiGetSnapshot_() });
     }
+    if (action === 'ai_config') {
+      return jsonResponse({ ok: true, data: apiGetAiConfig_() });
+    }
     return jsonResponse({ ok: false, error: 'Unknown GET action: ' + action });
   } catch (err) {
     return jsonResponse({ ok: false, error: err.message || String(err) });
@@ -35,6 +38,10 @@ function handleApiPost(action, payload) {
         return jsonResponse(apiComparePeriods_(payload));
       case 'ask_ai':
         return jsonResponse(apiAskAi_(payload));
+      case 'save_ai_config':
+        return jsonResponse(apiSaveAiConfig_(payload));
+      case 'get_ai_config':
+        return jsonResponse({ ok: true, data: apiGetAiConfig_() });
       default:
         return jsonResponse({ ok: false, error: 'Unknown action: ' + action });
     }
@@ -236,6 +243,14 @@ function apiAskAi_(payload) {
   return { ok: true, answer: answer };
 }
 
+function apiGetAiConfig_() {
+  return getUserAiConfigStatus_();
+}
+
+function apiSaveAiConfig_(payload) {
+  return saveUserAiConfig_(payload || {});
+}
+
 /**
  * Wrappers for HTMLService google.script.run
  */
@@ -248,3 +263,5 @@ function uiSaveSettings(payload) { return apiSaveSettings_(payload); }
 function uiResetData() { return apiResetData_(); }
 function uiComparePeriods(payload) { return apiComparePeriods_(payload); }
 function uiAskAi(payload) { return apiAskAi_(payload); }
+function uiGetAiConfig() { return { ok: true, data: apiGetAiConfig_() }; }
+function uiSaveAiConfig(payload) { return apiSaveAiConfig_(payload); }

@@ -5,7 +5,7 @@ export default {
     const corsHeaders = {
       'access-control-allow-origin': env.ALLOWED_ORIGIN || 'https://ads.cepat.top',
       'access-control-allow-methods': 'GET,POST,OPTIONS',
-      'access-control-allow-headers': 'content-type,x-internal-token,x-webhook-token'
+      'access-control-allow-headers': 'content-type,x-internal-token,x-webhook-token,x-ts,x-nonce,x-signature'
     };
 
     if (request.method === 'OPTIONS') {
@@ -138,10 +138,18 @@ async function proxyAi(rawBody, env) {
   }
   const question = body.question || '';
   const summary = body.summary || {};
-  const model = body.mode || env.OPENAI_MODEL || 'gpt-4o-mini';
+  const provider = String(body.provider || 'openai').toLowerCase() === 'gemini' ? 'gemini' : 'openai';
+  const userApiKey = String(body.user_api_key || '').trim();
+  const model = body.mode || (provider === 'gemini' ? (env.GEMINI_MODEL || 'gemini-1.5-flash') : (env.OPENAI_MODEL || 'gpt-4o-mini'));
+
+  if (!question) {
+    return json({ ok: false, error: 'Question is required' }, 400, {
+      'access-control-allow-origin': env.ALLOWED_ORIGIN || 'https://ads.cepat.top'
+    });
+  }
 
   const cacheTtl = Number(env.AI_CACHE_TTL_SEC || 300);
-  const cacheKey = await sha256Hex(`${model}|${question}|${JSON.stringify(summary)}`);
+  const cacheKey = await sha256Hex(`${provider}|${model}|${question}|${JSON.stringify(summary)}`);
   const aiCache = env.AI_CACHE_KV;
   if (aiCache) {
     const cached = await aiCache.get(`ai:${cacheKey}`);
@@ -152,8 +160,9 @@ async function proxyAi(rawBody, env) {
     }
   }
 
-  if (!env.OPENAI_API_KEY) {
-    return json({ ok: true, answer: 'OPENAI_API_KEY belum diset di Worker env.' }, 200, {
+  const resolvedApiKey = userApiKey || (provider === 'gemini' ? (env.GEMINI_API_KEY || '') : (env.OPENAI_API_KEY || ''));
+  if (!resolvedApiKey) {
+    return json({ ok: true, answer: `API key ${provider.toUpperCase()} belum tersedia untuk request ini.` }, 200, {
       'access-control-allow-origin': env.ALLOWED_ORIGIN || 'https://ads.cepat.top'
     });
   }
@@ -171,22 +180,36 @@ async function proxyAi(rawBody, env) {
     question
   ].join('\n');
 
-  const base = env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
-  const res = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${env.OPENAI_API_KEY}`
-    },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.3
-    })
-  });
-
-  const data = await res.json();
-  const answer = data?.choices?.[0]?.message?.content || 'Tidak ada jawaban AI.';
+  let answer = 'Tidak ada jawaban AI.';
+  if (provider === 'gemini') {
+    const geminiBase = env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta';
+    const geminiRes = await fetch(`${geminiBase}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(resolvedApiKey)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.3 }
+      })
+    });
+    const geminiData = await geminiRes.json();
+    answer = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || answer;
+  } else {
+    const base = env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+    const openAiRes = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${resolvedApiKey}`
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3
+      })
+    });
+    const data = await openAiRes.json();
+    answer = data?.choices?.[0]?.message?.content || answer;
+  }
   if (aiCache && answer) {
     await aiCache.put(`ai:${cacheKey}`, answer, { expirationTtl: cacheTtl });
   }
