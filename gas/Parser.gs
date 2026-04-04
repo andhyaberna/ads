@@ -141,7 +141,15 @@ function buildHeaderIndex_(headers) {
 
 function getString_(vals, i) {
   if (i < 0 || i >= vals.length) return '';
-  return String(vals[i] || '').trim();
+  return sanitizeSheetString_(String(vals[i] || '').trim());
+}
+
+function sanitizeSheetString_(value) {
+  var s = String(value || '');
+  if (!s) return '';
+  // Prevent formula injection when written to sheet cells.
+  if (/^[=+\-@]/.test(s)) return "'" + s;
+  return s;
 }
 
 function getNumber_(vals, i) {

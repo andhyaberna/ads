@@ -188,7 +188,8 @@ Campaign contoh:
 
 ## 10) Integrasi Live ads.cepat.top
 
-- Domain `https://ads.cepat.top/` diarahkan ke Web App GAS aktif.
-- Worker default sudah memuat `GAS_WEB_APP_URL` endpoint aktif.
-- Data flow live: **Excel/CSV -> GAS import -> Google Sheets target ID -> snapshot UI ads.cepat.top**.
-- Jika endpoint/GSheets gagal diakses, UI import menampilkan pesan error aman + import log status `failed`.
+- Domain `https://ads.cepat.top/` menampilkan frontend publik (tanpa ekspos URL GAS di UI).
+- Frontend hanya akses endpoint Worker publik (`/app/snapshot`, `/app/import`, `/app/save-note`, `/app/ai`).
+- Worker menyuntik `internal_token` server-side saat relay ke GAS (browser tidak pernah memegang token internal).
+- Data flow live: **Excel/CSV -> Worker /app/import -> GAS import -> Google Sheets target ID -> Worker /app/snapshot -> UI ads.cepat.top**.
+- Jika endpoint/GSheets gagal diakses, Worker kirim error aman ber-ID request (tanpa detail sensitif).

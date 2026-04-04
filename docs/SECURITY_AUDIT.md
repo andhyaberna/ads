@@ -58,7 +58,7 @@ Tanggal audit: 2026-04-04
 - Anti-replay nonce store (KV TTL)
 - Timestamp skew validation
 - Per-IP rate limit (KV)
-- Root route redirect ke GAS app agar domain tetap tersedia
+- Root route tidak mengekspos URL GAS (service response netral)
 
 ## Encryption Posture
 

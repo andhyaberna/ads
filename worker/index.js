@@ -17,8 +17,7 @@ export default {
     }
 
     if (path === '/' && request.method === 'GET') {
-      const target = env.GAS_WEB_APP_URL || 'https://script.google.com/macros/s/AKfycbyEQM12lmuZ_Q7NrBC_OVEHXDHN49oLEe52GLuMbFbSiH3HSzz6PK1S7DULwnfuTp4U/exec';
-      return Response.redirect(target, 302);
+      return json({ ok: true, service: 'ads-gateway' }, 200, corsHeaders);
     }
 
     if (!isAllowedOrigin(request, env)) {
@@ -27,6 +26,22 @@ export default {
 
     if (!(await checkRateLimit(request, env))) {
       return json({ ok: false, error: 'Rate limit exceeded' }, 429, corsHeaders);
+    }
+
+    if (path === '/app/snapshot' && request.method === 'GET') {
+      return handleAppSnapshot(env, corsHeaders);
+    }
+
+    if (path === '/app/import' && request.method === 'POST') {
+      return handleAppImport(request, env, corsHeaders);
+    }
+
+    if (path === '/app/save-note' && request.method === 'POST') {
+      return handleAppSaveNote(request, env, corsHeaders);
+    }
+
+    if (path === '/app/ai' && request.method === 'POST') {
+      return handleAppAi(request, env, corsHeaders);
     }
 
     if (path === '/proxy/apps-script' && request.method === 'POST') {
@@ -130,6 +145,222 @@ async function proxyAppsScript(rawBody, env) {
       'access-control-allow-origin': env.ALLOWED_ORIGIN || 'https://ads.cepat.top'
     }
   });
+}
+
+async function handleAppSnapshot(env, corsHeaders) {
+  const reqId = requestId_();
+  const upstream = await callGasAction_('snapshot', {}, env);
+  return normalizeGasResponse_(upstream, corsHeaders, reqId);
+}
+
+async function handleAppImport(request, env, corsHeaders) {
+  const reqId = requestId_();
+  let body = {};
+  try {
+    body = await request.json();
+  } catch (err) {
+    return json({ ok: false, error: 'Invalid JSON body', request_id: reqId }, 400, corsHeaders);
+  }
+
+  const level = String(body.level || '').toLowerCase();
+  if (!['campaign', 'adset', 'ad'].includes(level)) {
+    return json({ ok: false, error: 'Invalid level', request_id: reqId }, 400, corsHeaders);
+  }
+
+  const fileName = String(body.file_name || '').slice(0, 120);
+  const fileType = String(body.file_type || '').toLowerCase();
+  const worksheetName = String(body.worksheet_name || '').slice(0, 80);
+  const periodLabel = String(body.period_label || '').slice(0, 120);
+  const csvText = typeof body.csv_text === 'string' ? body.csv_text : '';
+  const excelBase64 = typeof body.excel_base64 === 'string' ? body.excel_base64 : '';
+
+  const maxCsvBytes = Number(env.MAX_IMPORT_CSV_BYTES || 2_500_000);
+  const maxXlsxB64 = Number(env.MAX_IMPORT_XLSX_B64_BYTES || 12_000_000);
+  if (csvText && csvText.length > maxCsvBytes) {
+    return json({ ok: false, error: 'CSV payload terlalu besar', request_id: reqId }, 413, corsHeaders);
+  }
+  if (excelBase64 && excelBase64.length > maxXlsxB64) {
+    return json({ ok: false, error: 'XLSX payload terlalu besar', request_id: reqId }, 413, corsHeaders);
+  }
+  if (!csvText && !excelBase64) {
+    return json({ ok: false, error: 'File payload kosong', request_id: reqId }, 400, corsHeaders);
+  }
+
+  const payload = {
+    level,
+    file_name: fileName || `import_${level}`,
+    file_type: fileType || (excelBase64 ? 'xlsx' : 'csv'),
+    worksheet_name: worksheetName,
+    period_label: periodLabel,
+    csv_text: csvText,
+    excel_base64: excelBase64
+  };
+
+  const upstream = await callGasAction_('import_csv', payload, env);
+  return normalizeGasResponse_(upstream, corsHeaders, reqId);
+}
+
+async function handleAppSaveNote(request, env, corsHeaders) {
+  const reqId = requestId_();
+  let body = {};
+  try {
+    body = await request.json();
+  } catch (err) {
+    return json({ ok: false, error: 'Invalid JSON body', request_id: reqId }, 400, corsHeaders);
+  }
+
+  const entityLevel = String(body.entity_level || '').toLowerCase();
+  const entityName = String(body.entity_name || '').trim().slice(0, 200);
+  const noteText = String(body.note_text || '').slice(0, 5000);
+  if (!['campaign', 'adset', 'ad'].includes(entityLevel) || !entityName) {
+    return json({ ok: false, error: 'Invalid note payload', request_id: reqId }, 400, corsHeaders);
+  }
+
+  const upstream = await callGasAction_('save_note', {
+    entity_level: entityLevel,
+    entity_name: entityName,
+    note_text: noteText
+  }, env);
+  return normalizeGasResponse_(upstream, corsHeaders, reqId);
+}
+
+async function handleAppAi(request, env, corsHeaders) {
+  const reqId = requestId_();
+  let body = {};
+  try {
+    body = await request.json();
+  } catch (err) {
+    return json({ ok: false, error: 'Invalid JSON body', request_id: reqId }, 400, corsHeaders);
+  }
+
+  const question = String(body.question || '').trim();
+  const rawProvider = String(body.provider || 'openai').toLowerCase();
+  const provider = ['openai', 'gemini', 'claude', 'builtin'].includes(rawProvider) ? rawProvider : 'openai';
+  if (!question) {
+    return json({ ok: false, error: 'Question is required', request_id: reqId }, 400, corsHeaders);
+  }
+
+  if (provider === 'builtin') {
+    return json({ ok: true, answer: 'Mode builtin aktif. Pilih provider AI di Settings untuk analisa model eksternal.' }, 200, corsHeaders);
+  }
+
+  const snapUpstream = await callGasAction_('snapshot', {}, env);
+  const snapResponse = normalizeGasResponseObj_(snapUpstream, reqId);
+  if (!snapResponse.ok) {
+    return json({ ok: false, error: snapResponse.error, request_id: reqId }, snapResponse.status, corsHeaders);
+  }
+  const summary = buildCompactSummary_(snapResponse.data?.data || snapResponse.data || {});
+
+  const aiResponse = await proxyAi(JSON.stringify({ question, provider, summary }), env);
+  const text = await aiResponse.text();
+  let parsed = {};
+  try {
+    parsed = text ? JSON.parse(text) : {};
+  } catch (err) {
+    parsed = { ok: false, error: 'Invalid AI response' };
+  }
+  return json(parsed, aiResponse.status, corsHeaders);
+}
+
+async function callGasAction_(action, payload, env) {
+  const url = String(env.GAS_WEB_APP_URL || '').trim();
+  const token = String(env.INTERNAL_API_TOKEN || '').trim();
+  if (!url || !token) {
+    return { ok: false, status: 500, error: 'Gateway not configured' };
+  }
+
+  const requestBody = Object.assign({}, payload || {}, {
+    action,
+    internal_token: token
+  });
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(requestBody)
+    });
+    const rawText = await res.text();
+    let data = {};
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch (err) {
+      data = { ok: false, error: 'Invalid upstream JSON' };
+    }
+    return { ok: true, status: res.status, data };
+  } catch (err) {
+    return { ok: false, status: 502, error: 'Upstream unavailable' };
+  }
+}
+
+function normalizeGasResponseObj_(upstream, reqId) {
+  if (!upstream || !upstream.ok) {
+    return { ok: false, status: 502, error: 'Gateway upstream unavailable', request_id: reqId };
+  }
+  const status = Number(upstream.status || 502);
+  const data = upstream.data || {};
+  if (status >= 500) {
+    return { ok: false, status: 502, error: 'Upstream service error', request_id: reqId };
+  }
+  if (data.ok === false) {
+    return {
+      ok: false,
+      status: status >= 400 ? status : 400,
+      error: sanitizeUpstreamError_(String(data.error || 'Request failed')),
+      request_id: reqId
+    };
+  }
+  return { ok: true, status: 200, data };
+}
+
+function normalizeGasResponse_(upstream, corsHeaders, reqId) {
+  const normalized = normalizeGasResponseObj_(upstream, reqId);
+  if (!normalized.ok) {
+    return json({ ok: false, error: normalized.error, request_id: reqId }, normalized.status, corsHeaders);
+  }
+  return json(normalized.data, 200, corsHeaders);
+}
+
+function sanitizeUpstreamError_(message) {
+  const msg = String(message || '').toLowerCase();
+  if (!msg) return 'Request failed';
+  if (msg.indexOf('forbidden') >= 0 || msg.indexOf('unauthorized') >= 0) return 'Akses ditolak';
+  if (msg.indexOf('rate') >= 0) return 'Rate limit exceeded';
+  if (msg.indexOf('invalid') >= 0) return 'Input tidak valid';
+  if (msg.indexOf('tidak ada data valid') >= 0) return 'Tidak ada data valid yang bisa diimport';
+  return message.slice(0, 180);
+}
+
+function buildCompactSummary_(snapshot) {
+  const entities = Array.isArray(snapshot.entities) ? snapshot.entities : [];
+  const urgentTop = entities
+    .filter((e) => e && e.priority === 'Urgent')
+    .sort((a, b) => ((b.metrics?.spend || 0) - (a.metrics?.spend || 0)))
+    .slice(0, 20)
+    .map((e) => ({
+      level: e.level,
+      name: e.name,
+      spend: e.metrics?.spend || 0,
+      ctr: e.metrics?.ctr || 0,
+      roas: e.metrics?.roas || 0,
+      cpa: e.metrics?.cpa || 0,
+      freq: e.metrics?.freq || 0,
+      status: e.status,
+      diagnosis: e.diagnosis
+    }));
+  return {
+    kpi: snapshot.kpi || {},
+    urgent_top: urgentTop,
+    alert_count: snapshot.kpi?.alert_count || 0
+  };
+}
+
+function requestId_() {
+  try {
+    return crypto.randomUUID();
+  } catch (err) {
+    return `req_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  }
 }
 
 async function proxyAi(rawBody, env) {
