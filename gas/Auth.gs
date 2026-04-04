@@ -10,6 +10,7 @@
 var AUTH_TOKEN_TTL_HOURS = 24;
 var AUTH_SALT_LENGTH = 32;
 var AUTH_MIN_PASSWORD_LENGTH = 8;
+var AUTH_PLAINTEXT_SALT_MARKER = 'PLAINTEXT';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PASSWORD HASHING (SHA-256 + Salt)
@@ -33,8 +34,42 @@ function hashPassword_(password, salt) {
 }
 
 function verifyPassword_(password, hash, salt) {
-  var computed = hashPassword_(password, salt);
-  return computed === hash;
+  if (isPlaintextPasswordRecord_(hash, salt)) {
+    return String(password || '') === String(hash || '');
+  }
+  var computed = hashPassword_(password, String(salt || ''));
+  return computed === String(hash || '');
+}
+
+function getAuthPasswordMode_() {
+  var mode = String(getScriptConfig_('AUTH_PASSWORD_MODE', '') || '').trim();
+  if (!mode) {
+    try {
+      var settings = getSheetRows_('settings');
+      for (var i = 0; i < settings.length; i++) {
+        if (String(settings[i].key_name || '').toUpperCase() === 'AUTH_PASSWORD_MODE') {
+          mode = String(settings[i].key_value || '').trim();
+          break;
+        }
+      }
+    } catch (err) {
+      mode = '';
+    }
+  }
+  mode = String(mode || 'HASHED').toUpperCase();
+  return mode === 'PLAINTEXT' ? 'PLAINTEXT' : 'HASHED';
+}
+
+function shouldStorePlaintextPasswords_() {
+  return getAuthPasswordMode_() === 'PLAINTEXT';
+}
+
+function isPlaintextPasswordRecord_(hash, salt) {
+  var hashText = String(hash || '');
+  if (!hashText) return false;
+  var saltText = String(salt || '').toUpperCase();
+  if (saltText === AUTH_PLAINTEXT_SALT_MARKER) return true;
+  return saltText === '';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -221,8 +256,8 @@ function registerUser_(payload) {
   }
   
   // Create user
-  var salt = generateSalt_();
-  var passwordHash = hashPassword_(password, salt);
+  var salt = shouldStorePlaintextPasswords_() ? AUTH_PLAINTEXT_SALT_MARKER : generateSalt_();
+  var passwordHash = shouldStorePlaintextPasswords_() ? String(password) : hashPassword_(password, salt);
   
   var user = createUser_({
     email: email,
@@ -379,8 +414,8 @@ function createFirstAdmin_(email, password, name) {
   }
   
   // Create admin user
-  var salt = generateSalt_();
-  var passwordHash = hashPassword_(password, salt);
+  var salt = shouldStorePlaintextPasswords_() ? AUTH_PLAINTEXT_SALT_MARKER : generateSalt_();
+  var passwordHash = shouldStorePlaintextPasswords_() ? String(password) : hashPassword_(password, salt);
   
   var user = createUser_({
     email: String(email).toLowerCase().trim(),
