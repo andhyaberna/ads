@@ -88,6 +88,14 @@ function apiPath(path){
   return (APIBASE?APIBASE.replace(/\/$/,""):"")+p;
 }
 
+function sanitizePublicError(msg){
+  var m=String(msg||"");
+  if(!m)return "";
+  m=m.replace(/https?:\/\/[^\s)]+/gi,"[redacted-url]");
+  m=m.replace(/\b(?:AKfycb|ghp_|xoxb-|xoxp-)[A-Za-z0-9_\-]+/g,"[redacted-token]");
+  return m.slice(0,220);
+}
+
 function mapSnapshotToLocalData(snapshot){
   var s=snapshot||{};
   var entities=s.entities||[];
@@ -300,7 +308,7 @@ function App(){
     }).catch(function(err){
       setLiveState("local");
       if(showMsg){
-        var msg=(err&&err.message?err.message:"");
+        var msg=sanitizePublicError(err&&err.message?err.message:"");
         setLiveMsg("Mode lokal (live sync gagal sementara)"+(msg?" — "+msg:""));
       }
     });
