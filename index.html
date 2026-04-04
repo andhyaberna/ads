@@ -66,13 +66,15 @@ function normApiBase(v){
 }
 
 function detectApiBase(){
+  var fromQuery="";
   try{
     var q=new URLSearchParams(location.search||"");
-    var fromQuery=normApiBase(q.get("api_base")||q.get("worker_url")||"");
+    fromQuery=normApiBase(q.get("api_base")||q.get("worker_url")||"");
     if(fromQuery){localStorage.setItem(APIBASEK,fromQuery);return fromQuery;}
   }catch(e){}
+  var fromStore="";
   try{
-    var fromStore=normApiBase(localStorage.getItem(APIBASEK)||"");
+    fromStore=normApiBase(localStorage.getItem(APIBASEK)||"");
     if(fromStore)return fromStore;
   }catch(e){}
   var host=(location.hostname||"").toLowerCase();
@@ -81,6 +83,14 @@ function detectApiBase(){
 }
 
 var APIBASE = detectApiBase();
+var HAS_EXPLICIT_APIBASE = !!normApiBase((function(){
+  try{
+    var q=new URLSearchParams(location.search||"");
+    return q.get("api_base")||q.get("worker_url")||localStorage.getItem(APIBASEK)||"";
+  }catch(e){
+    return "";
+  }
+})());
 function apiPath(path){
   var p=String(path||"");
   if(/^https?:\/\//i.test(p))return p;
@@ -92,7 +102,8 @@ function sanitizePublicError(msg){
   var m=String(msg||"");
   if(!m)return "";
   m=m.replace(/https?:\/\/[^\s)]+/gi,"[redacted-url]");
-  m=m.replace(/\b(?:AKfycb|ghp_|xoxb-|xoxp-)[A-Za-z0-9_\-]+/g,"[redacted-token]");
+  m=m.replace(/\b(?:ghp_|xoxb-|xoxp-|sk-[A-Za-z0-9_\-]{12,})[A-Za-z0-9_\-]*/g,"[redacted-token]");
+  m=m.replace(/\s*\(HTTP\s*\d+\)\s*$/i,"");
   return m.slice(0,220);
 }
 
@@ -299,6 +310,11 @@ function App(){
   }
 
   function loadLiveSnapshot(showMsg){
+    if(!HAS_EXPLICIT_APIBASE && (location.hostname||"").toLowerCase()==="ads.cepat.top"){
+      setLiveState("local");
+      if(showMsg)setLiveMsg("Mode lokal aktif (live sync belum dikonfigurasi endpoint API).");
+      return Promise.resolve(null);
+    }
     if(showMsg){setLiveState("syncing");setLiveMsg("Sinkronisasi data live...");}
     return req("/app/snapshot","GET").then(function(json){
       var mapped=mapSnapshotToLocalData(json.data||{});
@@ -309,7 +325,11 @@ function App(){
       setLiveState("local");
       if(showMsg){
         var msg=sanitizePublicError(err&&err.message?err.message:"");
-        setLiveMsg("Mode lokal (live sync gagal sementara)"+(msg?" — "+msg:""));
+        if(/\b404\b/.test(String(err&&err.message||""))){
+          setLiveMsg("Mode lokal aktif (endpoint live sync belum tersedia).");
+        }else{
+          setLiveMsg("Mode lokal (live sync gagal sementara)"+(msg?" — "+msg:""));
+        }
       }
     });
   }
