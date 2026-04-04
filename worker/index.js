@@ -5,7 +5,7 @@ export default {
     const corsHeaders = {
       'access-control-allow-origin': env.ALLOWED_ORIGIN || 'https://ads.cepat.top',
       'access-control-allow-methods': 'GET,POST,OPTIONS',
-      'access-control-allow-headers': 'content-type,x-internal-token,x-webhook-token,x-ts,x-nonce,x-signature'
+      'access-control-allow-headers': 'content-type,x-internal-token,x-webhook-token,x-ts,x-nonce,x-signature,authorization'
     };
 
     if (request.method === 'OPTIONS') {
@@ -27,6 +27,86 @@ export default {
     if (!(await checkRateLimit(request, env))) {
       return json({ ok: false, error: 'Rate limit exceeded' }, 429, corsHeaders);
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // AUTH ENDPOINTS (public, no auth_token required)
+    // ─────────────────────────────────────────────────────────────────────────
+    
+    if (path === '/auth/register' && request.method === 'POST') {
+      return handleAuthAction(request, env, corsHeaders, 'register');
+    }
+    
+    if (path === '/auth/login' && request.method === 'POST') {
+      return handleAuthAction(request, env, corsHeaders, 'login');
+    }
+    
+    if (path === '/auth/verify' && request.method === 'POST') {
+      return handleAuthAction(request, env, corsHeaders, 'verify_token');
+    }
+    
+    if (path === '/auth/logout' && request.method === 'POST') {
+      return handleAuthAction(request, env, corsHeaders, 'logout');
+    }
+    
+    if (path === '/auth/create-first-admin' && request.method === 'POST') {
+      return handleAuthAction(request, env, corsHeaders, 'create_first_admin');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // USER PROFILE ENDPOINTS (requires auth_token)
+    // ─────────────────────────────────────────────────────────────────────────
+    
+    if (path === '/user/profile' && request.method === 'GET') {
+      return handleProtectedAction(request, env, corsHeaders, 'get_profile');
+    }
+    
+    if (path === '/user/profile' && request.method === 'POST') {
+      return handleProtectedAction(request, env, corsHeaders, 'update_profile');
+    }
+    
+    if (path === '/user/change-password' && request.method === 'POST') {
+      return handleProtectedAction(request, env, corsHeaders, 'change_password');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ADMIN ENDPOINTS (requires auth_token + admin role)
+    // ─────────────────────────────────────────────────────────────────────────
+    
+    if (path === '/admin/users' && request.method === 'GET') {
+      return handleProtectedAction(request, env, corsHeaders, 'list_users');
+    }
+    
+    if (path === '/admin/users' && request.method === 'POST') {
+      return handleProtectedAction(request, env, corsHeaders, 'create_user');
+    }
+    
+    if (path === '/admin/user' && request.method === 'GET') {
+      return handleProtectedAction(request, env, corsHeaders, 'get_user');
+    }
+    
+    if (path === '/admin/user' && request.method === 'POST') {
+      return handleProtectedAction(request, env, corsHeaders, 'update_user');
+    }
+    
+    if (path === '/admin/user/delete' && request.method === 'POST') {
+      return handleProtectedAction(request, env, corsHeaders, 'delete_user');
+    }
+    
+    if (path === '/admin/user/reset-password' && request.method === 'POST') {
+      return handleProtectedAction(request, env, corsHeaders, 'reset_user_password');
+    }
+    
+    if (path === '/admin/users/bulk-status' && request.method === 'POST') {
+      return handleProtectedAction(request, env, corsHeaders, 'bulk_update_status');
+    }
+    
+    if (path === '/admin/stats' && request.method === 'GET') {
+      return handleProtectedAction(request, env, corsHeaders, 'get_user_stats');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // EXISTING APP ENDPOINTS
+    // ─────────────────────────────────────────────────────────────────────────
 
     if (path === '/app/snapshot' && request.method === 'GET') {
       return handleAppSnapshot(env, corsHeaders);
@@ -65,6 +145,98 @@ export default {
     return json({ ok: false, error: 'Not found' }, 404, corsHeaders);
   }
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTH HANDLERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function handleAuthAction(request, env, corsHeaders, action) {
+  const reqId = requestId_();
+  let body = {};
+  
+  try {
+    body = await request.json();
+  } catch (err) {
+    return json({ ok: false, error: 'Invalid JSON body', request_id: reqId }, 400, corsHeaders);
+  }
+  
+  // Call GAS without internal token (public auth endpoints)
+  const upstream = await callGasAuthAction_(action, body, env);
+  return normalizeGasResponse_(upstream, corsHeaders, reqId);
+}
+
+async function handleProtectedAction(request, env, corsHeaders, action) {
+  const reqId = requestId_();
+  
+  // Extract auth token from Authorization header or body
+  const authHeader = request.headers.get('authorization') || '';
+  let authToken = '';
+  
+  if (authHeader.startsWith('Bearer ')) {
+    authToken = authHeader.slice(7);
+  }
+  
+  let body = {};
+  
+  if (request.method === 'POST') {
+    try {
+      body = await request.json();
+    } catch (err) {
+      return json({ ok: false, error: 'Invalid JSON body', request_id: reqId }, 400, corsHeaders);
+    }
+  } else if (request.method === 'GET') {
+    // For GET requests, parse query params as body
+    const url = new URL(request.url);
+    for (const [key, value] of url.searchParams) {
+      body[key] = value;
+    }
+  }
+  
+  // Use token from body if not in header
+  if (!authToken && body.auth_token) {
+    authToken = body.auth_token;
+  }
+  
+  if (!authToken) {
+    return json({ ok: false, error: 'Unauthorized: Login diperlukan', request_id: reqId }, 401, corsHeaders);
+  }
+  
+  // Add auth token to payload
+  body.auth_token = authToken;
+  
+  // Call GAS with internal token
+  const upstream = await callGasAction_(action, body, env);
+  return normalizeGasResponse_(upstream, corsHeaders, reqId);
+}
+
+async function callGasAuthAction_(action, payload, env) {
+  const url = String(env.GAS_WEB_APP_URL || '').trim();
+  if (!url) {
+    return { ok: false, status: 500, error: 'Gateway not configured' };
+  }
+
+  const requestBody = Object.assign({}, payload || {}, {
+    action
+  });
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(requestBody)
+    });
+    const rawText = await res.text();
+    let data = {};
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch (err) {
+      data = { ok: false, error: 'Invalid upstream JSON' };
+    }
+    return { ok: true, status: res.status, data };
+  } catch (err) {
+    return { ok: false, status: 502, error: 'Upstream unavailable' };
+  }
+}
 
 function isAllowedOrigin(request, env) {
   const allow = (env.ALLOWED_ORIGIN || 'https://ads.cepat.top').replace(/\/$/, '');

@@ -19,6 +19,24 @@ function handleApiGet(action, params) {
 function handleApiPost(action, payload) {
   try {
     switch (action) {
+      // ─────────────────────────────────────────────────────────────────────
+      // AUTH ENDPOINTS (no token required)
+      // ─────────────────────────────────────────────────────────────────────
+      case 'register':
+        return jsonResponse(registerUser_(payload));
+      case 'login':
+        return jsonResponse(loginUser_(payload));
+      case 'verify_token':
+        return jsonResponse(verifyToken_(payload.auth_token));
+      case 'logout':
+        var tokenResult = validateAuthToken_(payload.auth_token);
+        return jsonResponse(logoutUser_(tokenResult.valid ? tokenResult.token_id : null));
+      case 'create_first_admin':
+        return jsonResponse(createFirstAdmin_(payload.email, payload.password, payload.name));
+      
+      // ─────────────────────────────────────────────────────────────────────
+      // PROTECTED ENDPOINTS (token required)
+      // ─────────────────────────────────────────────────────────────────────
       case 'bootstrap':
         ensureDbReady();
         return jsonResponse({ ok: true, message: 'DB ready' });
@@ -33,7 +51,7 @@ function handleApiPost(action, payload) {
       case 'save_settings':
         return jsonResponse(apiSaveSettings_(payload));
       case 'reset_data':
-        return jsonResponse(apiResetData_());
+        return jsonResponse(apiResetData_(payload));
       case 'compare_periods':
         return jsonResponse(apiComparePeriods_(payload));
       case 'ask_ai':
@@ -42,6 +60,46 @@ function handleApiPost(action, payload) {
         return jsonResponse(apiSaveAiConfig_(payload));
       case 'get_ai_config':
         return jsonResponse({ ok: true, data: apiGetAiConfig_() });
+      
+      // ─────────────────────────────────────────────────────────────────────
+      // USER MANAGEMENT ENDPOINTS (admin only)
+      // ─────────────────────────────────────────────────────────────────────
+      case 'list_users':
+        var adminUser1 = assertAdminRole_(payload);
+        return jsonResponse(apiListUsers_(payload, adminUser1));
+      case 'get_user':
+        var adminUser2 = assertAdminRole_(payload);
+        return jsonResponse(apiGetUser_(payload, adminUser2));
+      case 'create_user':
+        var adminUser3 = assertAdminRole_(payload);
+        return jsonResponse(apiCreateUser_(payload, adminUser3));
+      case 'update_user':
+        var adminUser4 = assertAdminRole_(payload);
+        return jsonResponse(apiUpdateUser_(payload, adminUser4));
+      case 'delete_user':
+        var adminUser5 = assertAdminRole_(payload);
+        return jsonResponse(apiDeleteUser_(payload, adminUser5));
+      case 'reset_user_password':
+        var adminUser6 = assertAdminRole_(payload);
+        return jsonResponse(apiResetUserPassword_(payload, adminUser6));
+      case 'bulk_update_status':
+        var adminUser7 = assertAdminRole_(payload);
+        return jsonResponse(apiBulkUpdateStatus_(payload, adminUser7));
+      case 'get_user_stats':
+        assertAdminRole_(payload);
+        return jsonResponse(apiGetUserStats_());
+      
+      // ─────────────────────────────────────────────────────────────────────
+      // PROFILE ENDPOINTS (any logged in user)
+      // ─────────────────────────────────────────────────────────────────────
+      case 'get_profile':
+        var currentUser = assertAuthToken_(payload);
+        return jsonResponse({ ok: true, user: currentUser });
+      case 'update_profile':
+        return jsonResponse(apiUpdateProfile_(payload));
+      case 'change_password':
+        return jsonResponse(apiChangePassword_(payload));
+      
       default:
         return jsonResponse({ ok: false, error: 'Unknown action: ' + action });
     }
@@ -51,6 +109,9 @@ function handleApiPost(action, payload) {
 }
 
 function apiImportCsv_(payload) {
+  // Admin only via hybrid auth
+  assertAdminHybrid_(payload);
+  
   ensureDbReady();
   payload = payload || {};
   var level = String(payload.level || '').toLowerCase();
@@ -215,12 +276,16 @@ function enrichEntity_(row, level, thresholdRows, notes) {
 }
 
 function apiSaveThresholds_(payload) {
+  // Admin only via hybrid auth
+  assertAdminHybrid_(payload);
   var items = payload.items || [];
   upsertThresholds_(items);
   return { ok: true };
 }
 
 function apiSaveNote_(payload) {
+  // Any authenticated user
+  assertAuthorizedUserHybrid_(payload);
   var level = payload.entity_level;
   var name = payload.entity_name;
   var note = payload.note_text || '';
@@ -230,7 +295,7 @@ function apiSaveNote_(payload) {
 }
 
 function apiSaveSettings_(payload) {
-  assertAdminUser_();
+  assertAdminHybrid_(payload);
   var items = payload.items || [];
   var nonSensitive = [];
   items.forEach(function (i) {
@@ -251,12 +316,19 @@ function apiSaveSettings_(payload) {
   return { ok: true };
 }
 
-function apiResetData_() {
+function apiResetData_(payload) {
+  assertAdminHybrid_(payload);
   clearDataSheets_();
   return { ok: true, message: 'Data campaigns/adsets/ads/notes/import_logs direset' };
 }
 
 function apiComparePeriods_(payload) {
+  // Check access - only paid users or admin
+  var user = assertAuthorizedUserHybrid_(payload);
+  if (user.role !== 'admin' && user.payment_status !== 'LUNAS') {
+    throw new Error('Forbidden: Fitur ini hanya untuk user dengan status LUNAS');
+  }
+  
   var level = String(payload.level || 'campaign').toLowerCase();
   var pA = parseCsvImport_(payload.csv_a || '', level, 'period_A.csv', 'A').rows;
   var pB = parseCsvImport_(payload.csv_b || '', level, 'period_B.csv', 'B').rows;
@@ -290,6 +362,12 @@ function apiComparePeriods_(payload) {
 }
 
 function apiAskAi_(payload) {
+  // Check access - only paid users or admin
+  var user = assertAuthorizedUserHybrid_(payload);
+  if (user.role !== 'admin' && user.payment_status !== 'LUNAS') {
+    throw new Error('Forbidden: Fitur AI hanya untuk user dengan status LUNAS');
+  }
+  
   var question = payload.question || '';
   if (!question) return { ok: false, error: 'question kosong' };
   var snapshot = apiGetSnapshot_();
@@ -298,17 +376,17 @@ function apiAskAi_(payload) {
 }
 
 function apiGetAiConfig_() {
-  assertAuthorizedUser_();
+  assertAuthorizedUserHybrid_({});
   return getUserAiConfigStatus_();
 }
 
 function apiSaveAiConfig_(payload) {
-  assertAuthorizedUser_();
+  assertAuthorizedUserHybrid_(payload);
   return saveUserAiConfig_(payload || {});
 }
 
 function apiGetSystemConfigStatus_() {
-  assertAdminUser_();
+  assertAdminHybrid_({});
   var nonSensitiveMap = {};
   sanitizeSettingsForClient_(getSheetRows_('settings')).forEach(function (r) {
     nonSensitiveMap[r.key_name] = r.key_value;
@@ -326,6 +404,51 @@ function apiGetSystemConfigStatus_() {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PROFILE ENDPOINTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+function apiUpdateProfile_(payload) {
+  var user = assertAuthToken_(payload);
+  var updates = {};
+  
+  // Only allow updating name
+  if (payload.name !== undefined) {
+    var nameVal = validateName_(payload.name);
+    if (!nameVal.valid) return { ok: false, error: nameVal.error };
+    updates.name = String(payload.name).trim();
+  }
+  
+  if (Object.keys(updates).length === 0) {
+    return { ok: false, error: 'Tidak ada data yang diupdate' };
+  }
+  
+  var updatedUser = updateUser_(user.id, updates);
+  
+  return {
+    ok: true,
+    message: 'Profil berhasil diupdate',
+    user: {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      name: updatedUser.name,
+      role: updatedUser.role,
+      payment_status: updatedUser.payment_status
+    }
+  };
+}
+
+function apiChangePassword_(payload) {
+  var user = assertAuthToken_(payload);
+  var oldPassword = payload.old_password;
+  var newPassword = payload.new_password;
+  
+  if (!oldPassword) return { ok: false, error: 'Password lama wajib diisi' };
+  if (!newPassword) return { ok: false, error: 'Password baru wajib diisi' };
+  
+  return changePassword_(user.id, oldPassword, newPassword);
+}
+
 /**
  * Wrappers for HTMLService google.script.run
  */
@@ -335,7 +458,7 @@ function uiImportCsv(payload) { assertAdminUser_(); enforceUserRateLimit_('impor
 function uiSaveThresholds(payload) { assertAdminUser_(); return apiSaveThresholds_(payload); }
 function uiSaveNote(payload) { assertAuthorizedUser_(); return apiSaveNote_(payload); }
 function uiSaveSettings(payload) { assertAdminUser_(); return apiSaveSettings_(payload); }
-function uiResetData() { assertAdminUser_(); return apiResetData_(); }
+function uiResetData() { assertAdminUser_(); return apiResetData_({ auth_token: null }); }
 function uiComparePeriods(payload) { assertAuthorizedUser_(); enforceUserRateLimit_('compare_periods', 30, 60); return apiComparePeriods_(payload); }
 function uiAskAi(payload) { assertAuthorizedUser_(); enforceUserRateLimit_('ask_ai', 30, 60); return apiAskAi_(payload); }
 function uiGetAiConfig() { assertAuthorizedUser_(); return { ok: true, data: apiGetAiConfig_() }; }
