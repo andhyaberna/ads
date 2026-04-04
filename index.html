@@ -4,22 +4,25 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Ad Campaign Tracker</title>
-  <meta http-equiv="refresh" content="0;url=https://script.google.com/macros/s/AKfycbyEQM12lmuZ_Q7NrBC_OVEHXDHN49oLEe52GLuMbFbSiH3HSzz6PK1S7DULwnfuTp4U/exec" />
   <style>
-    body { font-family: Arial, sans-serif; padding: 24px; color: #1f2937; }
-    a { color: #2563eb; }
+    body { font-family: Arial, sans-serif; padding: 24px; color: #1f2937; background: #f8fafc; }
+    .card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:16px; max-width:760px; }
+    a.btn { display:inline-block; padding:10px 14px; background:#111827; color:#fff; border-radius:8px; text-decoration:none; margin-right:8px; }
+    .muted { color:#6b7280; }
+    code { background:#eef2ff; padding:2px 6px; border-radius:6px; }
   </style>
 </head>
 <body>
-  <h2>Mengarahkan ke Ad Campaign Tracker terbaru…</h2>
-  <p>
-    Jika tidak otomatis, klik:
-    <a href="https://script.google.com/macros/s/AKfycbyEQM12lmuZ_Q7NrBC_OVEHXDHN49oLEe52GLuMbFbSiH3HSzz6PK1S7DULwnfuTp4U/exec">
-      Buka Web App Google Apps Script
-    </a>
-  </p>
-  <script>
-    window.location.replace('https://script.google.com/macros/s/AKfycbyEQM12lmuZ_Q7NrBC_OVEHXDHN49oLEe52GLuMbFbSiH3HSzz6PK1S7DULwnfuTp4U/exec');
-  </script>
+  <div class="card">
+    <h2>Ad Campaign Tracker</h2>
+    <p class="muted">Portal berhasil dibuka. Jika aplikasi GAS menampilkan 403, berarti akses deployment GAS perlu dibuka untuk user/domain yang tepat.</p>
+    <p>
+      <a class="btn" href="https://script.google.com/macros/s/AKfycbyEQM12lmuZ_Q7NrBC_OVEHXDHN49oLEe52GLuMbFbSiH3HSzz6PK1S7DULwnfuTp4U/exec" target="_blank" rel="noopener noreferrer">Buka App (GAS)</a>
+      <a class="btn" href="https://ads.cepat.top/" style="background:#2563eb">Refresh Portal</a>
+    </p>
+    <p class="muted"><b>Fix yang perlu di Google Apps Script:</b><br>
+      Deploy → Manage deployments → Web app → <code>Who has access</code> set ke user/domain yang benar (atau <code>Anyone</code> jika memang publik internal tanpa login Google tertentu).
+    </p>
+  </div>
 </body>
 </html>
