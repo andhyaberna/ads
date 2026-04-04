@@ -51,12 +51,22 @@ function sd(d){localStorage.setItem(SK,JSON.stringify(d));}
 function laicfg(){
   try{
     var raw=JSON.parse(localStorage.getItem(AKCFG)||"{}")||{};
-    return {provider:raw.provider||"builtin"};
+    return {
+      provider:raw.provider||"builtin",
+      model:raw.model||"",
+      apiKey:"",
+      rememberKey:false
+    };
   }catch(e){
-    return {provider:"builtin"};
+    return {provider:"builtin",model:"",apiKey:"",rememberKey:false};
   }
 }
-function saicfg(cfg){localStorage.setItem(AKCFG,JSON.stringify(cfg||{}));}
+function saicfg(cfg){
+  var c=cfg||{};
+  var safe={provider:c.provider||"builtin",model:c.model||""};
+  if(c.rememberKey&&c.apiKey)safe.apiKey=String(c.apiKey);
+  localStorage.setItem(AKCFG,JSON.stringify(safe));
+}
 
 function normApiBase(v){
   var s=String(v||"").trim();
@@ -450,6 +460,8 @@ function App(){
     if(!aiInput.trim())return;
     setAiLoading(true);setAiResult("");
     var provider=(aiCfg.provider||"builtin").toLowerCase();
+    var userApiKey=String(aiCfg.apiKey||"").trim();
+    var model=String(aiCfg.model||"").trim();
     var localFallback=function(msg){
       var urgent=allItems.filter(function(c){return c._diag&&c._diag[0]&&c._diag[0].priority==="Urgent";}).slice(0,5);
       var lines=[msg||"Mode builtin aktif.","Prioritas cepat:"];
@@ -461,7 +473,7 @@ function App(){
 
     if(provider==="builtin")return localFallback("Provider AI belum dipilih (builtin).");
 
-    req("/app/ai","POST",{question:aiInput,provider:provider})
+    req("/app/ai","POST",{question:aiInput,provider:provider,user_api_key:userApiKey,model:model})
       .then(function(json){
         setAiResult((json&&json.answer)||"Tidak ada respons.");
         setAiLoading(false);
@@ -799,7 +811,7 @@ function App(){
       h("div",{style:{fontSize:14,fontWeight:500,marginBottom:16}},"Settings"),
       h("div",{className:"card"},
         h("div",{style:{fontWeight:500,marginBottom:4}},"AI Provider (Opsional)"),
-        h("div",{style:{fontSize:12,color:"#888",marginBottom:12}},"Provider dipilih di client, key dikelola aman di server relay (tidak disimpan di browser)."),
+        h("div",{style:{fontSize:12,color:"#888",marginBottom:12}},"Pilih provider, opsional isi API key/model. API key hanya tersimpan jika kamu centang 'Simpan key di perangkat ini'."),
         h("div",{style:{marginBottom:10}},
           h("select",{value:aiCfg.provider||"builtin",onChange:function(e){var v=e.target.value;setAiCfg(function(c){return Object.assign({},c,{provider:v});});}},
             h("option",{value:"builtin"},"Builtin (tanpa API key)"),
@@ -808,8 +820,20 @@ function App(){
             h("option",{value:"claude"},"Claude")
           )
         ),
+        aiCfg.provider!=="builtin"&&h("div",null,
+          h("div",{style:{marginBottom:10}},
+            h("input",{type:"password",placeholder:"API Key (opsional)",value:aiCfg.apiKey||"",onChange:function(e){var v=e.target.value;setAiCfg(function(c){return Object.assign({},c,{apiKey:v});});}})
+          ),
+          h("div",{style:{marginBottom:10}},
+            h("input",{type:"text",placeholder:"Model (opsional, contoh: gpt-4o-mini / gemini-1.5-flash)",value:aiCfg.model||"",onChange:function(e){var v=e.target.value;setAiCfg(function(c){return Object.assign({},c,{model:v});});}})
+          ),
+          h("label",{className:"row",style:{marginBottom:6,fontSize:12,color:"#555",gap:6}},
+            h("input",{type:"checkbox",style:{width:14,height:14},checked:!!aiCfg.rememberKey,onChange:function(e){var v=e.target.checked;setAiCfg(function(c){return Object.assign({},c,{rememberKey:v});});}}),
+            h("span",null,"Simpan key di perangkat ini")
+          )
+        ),
         h("div",{className:"row",style:{marginTop:10}},
-          h("button",{className:"btnp",onClick:function(){saicfg(aiCfg);}},"Simpan"),
+          h("button",{className:"btnp",onClick:function(){saicfg(aiCfg);setLiveMsg("Konfigurasi AI tersimpan.");}},"Simpan"),
           h("span",{style:{fontSize:12,color:"#0f6e56"}},"Tersimpan lokal")
         )
       ),

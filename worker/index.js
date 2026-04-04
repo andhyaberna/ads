@@ -377,7 +377,7 @@ async function proxyAi(rawBody, env) {
   const rawProvider = String(body.provider || 'openai').toLowerCase();
   const provider = ['openai', 'gemini', 'claude'].includes(rawProvider) ? rawProvider : 'openai';
   const userApiKey = String(body.user_api_key || '').trim();
-  const model = body.mode || (
+  const model = body.model || body.mode || (
     provider === 'gemini'
       ? (env.GEMINI_MODEL || 'gemini-1.5-flash')
       : provider === 'claude'
