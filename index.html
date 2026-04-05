@@ -115,9 +115,9 @@ function parseJsonResponse_(res){
 }
 
 // Auth API calls
-function authReq(path,payload){
-  var opts={method:"POST",headers:{"Content-Type":"application/json"}};
-  if(payload)opts.body=JSON.stringify(payload);
+function authReq(path,payload,method){
+  var httpMethod=String(method||"POST").toUpperCase();
+  var opts={method:httpMethod,headers:{"Content-Type":"application/json"}};
   var token=getAuthToken();
   if(token)opts.headers["Authorization"]="Bearer "+token;
 
@@ -125,6 +125,19 @@ function authReq(path,payload){
   var authRoute=isAuthPath_(path);
   var relativePath=String(path||"");
   if(relativePath.charAt(0)!=="/")relativePath="/"+relativePath;
+  if(httpMethod==="GET"&&payload&&typeof payload==="object"){
+    var q=[];
+    Object.keys(payload).forEach(function(k){
+      var v=payload[k];
+      if(v===undefined||v===null||v==="")return;
+      q.push(encodeURIComponent(k)+"="+encodeURIComponent(String(v)));
+    });
+    if(q.length>0){
+      relativePath+=(relativePath.indexOf("?")>=0?"&":"?")+q.join("&");
+    }
+  }else if(payload){
+    opts.body=JSON.stringify(payload);
+  }
   var primaryBase=APIBASE||"";
 
   function callAuthAtBase_(base){
@@ -566,13 +579,13 @@ function AdminUserPanel(props){
   
   function loadUsers(){
     setLoading(true);
-    authReq("/admin/users?search="+encodeURIComponent(search)+"&role="+roleFilter+"&payment_status="+statusFilter,{auth_token:authToken})
+    authReq("/admin/users",{search:search,role:roleFilter,payment_status:statusFilter,auth_token:authToken},"GET")
       .then(function(res){setLoading(false);if(res.ok)setUsers(res.users||[]);})
       .catch(function(){setLoading(false);});
   }
   
   function loadStats(){
-    authReq("/admin/stats",{auth_token:authToken})
+    authReq("/admin/stats",{auth_token:authToken},"GET")
       .then(function(res){if(res.ok)setStats(res.stats);});
   }
   
@@ -816,7 +829,6 @@ function App(){
   }
   
   function handleLogout(){
-    authReq("/auth/logout",{auth_token:authToken}).catch(function(){});
     clearAuth();
     setCurrentUser(null);
     setAuthToken("");
