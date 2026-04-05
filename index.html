@@ -208,7 +208,7 @@ function detectApiBase(){
 }
 
 var APIBASE = detectApiBase();
-var HAS_EXPLICIT_APIBASE = !!normApiBase((function(){
+var HAS_EXPLICIT_APIBASE = (location.hostname||"").toLowerCase()==="ads.cepat.top"||!!normApiBase((function(){
   try{
     var q=new URLSearchParams(location.search||"");
     return q.get("api_base")||q.get("worker_url")||localStorage.getItem(APIBASEK)||"";
