@@ -72,6 +72,12 @@ function isPlaintextPasswordRecord_(hash, salt) {
   return saltText === '';
 }
 
+function isUserActive_(value) {
+  if (value === true || value === 1) return true;
+  var s = String(value == null ? '' : value).trim().toLowerCase();
+  return s === 'true' || s === '1' || s === 'yes' || s === 'y' || s === 'aktif';
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // INPUT VALIDATION
 // ─────────────────────────────────────────────────────────────────────────────
@@ -211,7 +217,7 @@ function validateAuthToken_(token) {
     return { valid: false, error: 'User tidak ditemukan' };
   }
   
-  if (user.is_active !== 'true') {
+  if (!isUserActive_(user.is_active)) {
     return { valid: false, error: 'Akun tidak aktif' };
   }
   
@@ -307,7 +313,7 @@ function loginUser_(payload) {
   }
   
   // Check if active
-  if (user.is_active !== 'true') {
+  if (!isUserActive_(user.is_active)) {
     return { ok: false, error: 'Akun tidak aktif. Hubungi admin.' };
   }
   
