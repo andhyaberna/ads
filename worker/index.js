@@ -21,8 +21,8 @@ export default {
       return json(diag, diag.ok ? 200 : 502, corsHeaders);
     }
 
-    if (path === '/' && request.method === 'GET') {
-      return json({ ok: true, service: 'ads-gateway' }, 200, corsHeaders);
+    if ((path === '/' || path === '/index.html') && request.method === 'GET') {
+      return serveFrontend_(env, corsHeaders);
     }
 
     if (!isAllowedOrigin(request, env)) {
@@ -550,6 +550,42 @@ async function checkUpstreamHealth_(env) {
   }
 
   return { ok: false, error: 'all upstream attempts failed', checks };
+}
+
+async function serveFrontend_(env, corsHeaders) {
+  const defaultHtmlUrl = 'https://raw.githubusercontent.com/andhyaberna/ads/main/index.html';
+  const htmlUrl = String(env.FRONTEND_HTML_URL || defaultHtmlUrl).trim();
+  let timer = null;
+  try {
+    const timeoutMs = Number(env.FRONTEND_FETCH_TIMEOUT_MS || 12000);
+    const ctrl = new AbortController();
+    timer = setTimeout(() => ctrl.abort('frontend-timeout'), timeoutMs);
+    const res = await fetch(htmlUrl, {
+      method: 'GET',
+      signal: ctrl.signal,
+      headers: {
+        'user-agent': 'ads-worker-frontend-proxy'
+      }
+    });
+
+    if (!res.ok) {
+      return json({ ok: false, error: 'Frontend unavailable' }, 502, corsHeaders);
+    }
+
+    const html = await res.text();
+    return new Response(html, {
+      status: 200,
+      headers: {
+        ...corsHeaders,
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store'
+      }
+    });
+  } catch (err) {
+    return json({ ok: false, error: 'Frontend unavailable' }, 502, corsHeaders);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function normalizeGasResponseObj_(upstream, reqId) {
