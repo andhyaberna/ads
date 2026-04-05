@@ -59,7 +59,6 @@ var SK = "act_v5";
 var AKCFG = "act_ai_cfg_v2";
 var APIBASEK = "act_api_base_v1";
 var AUTHK = "act_auth_v1";
-var DEFAULT_EDGE_API_BASE = "https://api.ads.cepat.top";
 var DEF = {campaigns:[],adsets:[],ads:[],notes:{},thresholds:{roas:{enabled:true,min:1.5,label:"ROAS min"},cpa:{enabled:false,max:150000,label:"CPA max"},ctr:{enabled:true,min:1,label:"CTR min %"},cpm:{enabled:false,max:60000,label:"CPM max"}}};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,18 +136,14 @@ function authReq(path,payload){
   return callAuthAtBase_(primaryBase)
     .then(function(j){
       var status=Number(j&&j.__httpStatus||0);
-      var shouldFallback=authRoute&&(!j.ok)&&(status===404||status===0||/Invalid server response/i.test(String(j.error||"")));
-      if(!shouldFallback)return j;
-      if(primaryBase===DEFAULT_EDGE_API_BASE)return j;
-      return callAuthAtBase_(DEFAULT_EDGE_API_BASE).then(function(edgeRes){
-        return edgeRes&&edgeRes.ok?edgeRes:j;
-      }).catch(function(){return j;});
+      if(authRoute && !j.ok && status===404){
+        j.error="Route auth belum aktif di domain ini (/auth/* masih 404).";
+      }
+      return j;
     })
     .catch(function(err){
       if(!authRoute)return {ok:false,error:err&&err.message?err.message:"Request gagal"};
-      return callAuthAtBase_(DEFAULT_EDGE_API_BASE).catch(function(){
-        return {ok:false,error:err&&err.message?err.message:"Auth request gagal"};
-      });
+      return {ok:false,error:err&&err.message?err.message:"Auth request gagal"};
     });
 }
 
