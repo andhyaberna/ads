@@ -25,6 +25,20 @@ Kalau Anda mau setup paling sederhana:
 
 Dengan mode ini, frontend tidak perlu expose URL GAS dan request auth tetap lewat endpoint `/auth/*`.
 
+### Opsi paling praktis (tanpa wrangler manual)
+
+Repo ini sekarang menyediakan **Cloudflare Pages Functions** di folder:
+
+- `functions/auth/login.js`
+- `functions/auth/register.js`
+- `functions/auth/verify.js`
+- `functions/auth/logout.js`
+- `functions/auth/create-first-admin.js`
+- `functions/health.js`
+
+Jika project Anda terhubung Git -> Cloudflare Pages, cukup push ke branch produksi.
+Pages akan deploy route `/auth/*` dan `/health` otomatis dari folder `functions/`.
+
 ---
 
 ## 1) Siapkan Google Sheets target
