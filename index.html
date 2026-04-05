@@ -58,6 +58,7 @@ var useRef = R.useRef;
 
 var SK = "act_v5";
 var AKCFG = "act_ai_cfg_v2";
+var AIAUTHK = "act_ai_auth_v1";
 var APIBASEK = "act_api_base_v1";
 var AUTHK = "act_auth_v1";
 var DEF = {campaigns:[],adsets:[],ads:[],notes:{},thresholds:{roas:{enabled:true,min:1.5,label:"ROAS min"},cpa:{enabled:false,max:150000,label:"CPA max"},ctr:{enabled:true,min:1,label:"CTR min %"},cpm:{enabled:false,max:60000,label:"CPM max"}}};
@@ -169,18 +170,84 @@ function laicfg(){
     return {
       provider:raw.provider||"builtin",
       model:raw.model||"",
+      authMode:raw.authMode||"browser_session",
+      useLegacyKey:!!raw.useLegacyKey,
       apiKey:"",
       rememberKey:false
     };
   }catch(e){
-    return {provider:"builtin",model:"",apiKey:"",rememberKey:false};
+    return {provider:"builtin",model:"",authMode:"browser_session",useLegacyKey:false,apiKey:"",rememberKey:false};
   }
 }
 function saicfg(cfg){
   var c=cfg||{};
-  var safe={provider:c.provider||"builtin",model:c.model||""};
+  var safe={
+    provider:c.provider||"builtin",
+    model:c.model||"",
+    authMode:c.authMode||"browser_session",
+    useLegacyKey:!!c.useLegacyKey
+  };
   if(c.rememberKey&&c.apiKey)safe.apiKey=String(c.apiKey);
   localStorage.setItem(AKCFG,JSON.stringify(safe));
+}
+
+function defaultAiProviderAuth_(){
+  return {state:"disconnected",checked_at:"",error:""};
+}
+
+function getAiProviderAuthState_(store,provider){
+  var p=String(provider||"").toLowerCase();
+  if(!store||!p||p==="builtin")return defaultAiProviderAuth_();
+  var item=store[p]||{};
+  return {
+    state:item.state||"disconnected",
+    checked_at:item.checked_at||"",
+    error:item.error||""
+  };
+}
+
+function loadAiAuth(){
+  try{
+    var raw=JSON.parse(localStorage.getItem(AIAUTHK)||"{}")||{};
+    return {
+      openai:getAiProviderAuthState_(raw,"openai"),
+      gemini:getAiProviderAuthState_(raw,"gemini"),
+      claude:getAiProviderAuthState_(raw,"claude")
+    };
+  }catch(e){
+    return {
+      openai:defaultAiProviderAuth_(),
+      gemini:defaultAiProviderAuth_(),
+      claude:defaultAiProviderAuth_()
+    };
+  }
+}
+
+function saveAiAuth(auth){
+  var a=auth||{};
+  localStorage.setItem(AIAUTHK,JSON.stringify({
+    openai:getAiProviderAuthState_(a,"openai"),
+    gemini:getAiProviderAuthState_(a,"gemini"),
+    claude:getAiProviderAuthState_(a,"claude")
+  }));
+}
+
+function providerLoginUrl_(provider){
+  var p=String(provider||"").toLowerCase();
+  if(p==="openai")return "https://platform.openai.com/login";
+  if(p==="gemini")return "https://aistudio.google.com/";
+  if(p==="claude")return "https://console.anthropic.com/";
+  return "";
+}
+
+function aiAuthMeta_(state){
+  var s=String(state||"disconnected").toLowerCase();
+  if(s==="connected")return {label:"Connected",bg:"#dcfce7",color:"#166534"};
+  if(s==="checking")return {label:"Checking",bg:"#e6f1fb",color:"#185fa5"};
+  if(s==="pending")return {label:"Pending",bg:"#fef3c7",color:"#92400e"};
+  if(s==="expired")return {label:"Expired",bg:"#faece7",color:"#993c1d"};
+  if(s==="error")return {label:"Error",bg:"#faece7",color:"#993c1d"};
+  return {label:"Disconnected",bg:"#f3f4f6",color:"#374151"};
 }
 
 function normApiBase(v){
@@ -812,6 +879,7 @@ function App(){
   // ─────────────────────────────────────────────────────────────────────────
   var st=useState(ld()),data=st[0],setData=st[1];
   var st2=useState(laicfg()),aiCfg=st2[0],setAiCfg=st2[1];
+  var st2b=useState(loadAiAuth()),aiAuth=st2b[0],setAiAuth=st2b[1];
   var st3=useState("Dashboard"),tab=st3[0],setTab=st3[1];
   var st4=useState({campaign:null,adset:null,ad:null}),imports=st4[0],setImports=st4[1];
   var st5=useState({}),importMsgs=st5[0],setImportMsgs=st5[1];
@@ -878,8 +946,68 @@ function App(){
 
   useEffect(function(){sd(data);},[data]);
   useEffect(function(){saicfg(aiCfg);},[aiCfg]);
+  useEffect(function(){saveAiAuth(aiAuth);},[aiAuth]);
   useEffect(function(){if(isLoggedIn)loadLiveSnapshot(true);},[isLoggedIn]);
   function upd(fn){setData(function(prev){var next=fn(prev);sd(next);return next;});}
+
+  function setProviderAuthState(provider,state,error){
+    var p=String(provider||"").toLowerCase();
+    if(!p||p==="builtin")return;
+    setAiAuth(function(prev){
+      var next=Object.assign({},prev||{});
+      next[p]={state:state||"disconnected",checked_at:new Date().toISOString(),error:error||""};
+      return next;
+    });
+  }
+
+  function connectProviderBrowser(provider){
+    var p=String(provider||"").toLowerCase();
+    var url=providerLoginUrl_(p);
+    if(!url){setLiveMsg("Provider belum valid untuk browser login.");return;}
+    try{window.open(url,"_blank","noopener,noreferrer");}catch(e){}
+    setProviderAuthState(p,"pending","");
+    setLiveMsg("Login browser dibuka untuk "+p+". Setelah selesai, klik 'Validasi Session'.");
+  }
+
+  function verifyProviderSession(provider){
+    var p=String(provider||"").toLowerCase();
+    if(!p||p==="builtin")return Promise.resolve(false);
+    if(!isLoggedIn||!authToken){
+      setProviderAuthState(p,"expired","Session aplikasi berakhir. Login ulang diperlukan.");
+      setLiveMsg("Session aplikasi berakhir. Login ulang lalu validasi ulang provider.");
+      return Promise.resolve(false);
+    }
+    setProviderAuthState(p,"checking","");
+    setLiveMsg("Validasi session "+p+"...");
+    return req("/app/ai","POST",{question:"Balas satu kata: aktif.",provider:p,model:String(aiCfg.model||"").trim()})
+      .then(function(json){
+        var answer=String((json&&json.answer)||"").trim();
+        if(!answer){
+          setProviderAuthState(p,"error","Provider tidak memberi respons.");
+          setLiveMsg("Validasi gagal: provider tidak merespons.");
+          return false;
+        }
+        if(/api key/i.test(answer)&&/belum tersedia/i.test(answer)){
+          setProviderAuthState(p,"error","Kredensial provider belum tersedia di secure relay.");
+          setLiveMsg("Validasi gagal: kredensial provider belum tersedia di server.");
+          return false;
+        }
+        setProviderAuthState(p,"connected","");
+        setLiveMsg("Session "+p+" aktif.");
+        return true;
+      })
+      .catch(function(err){
+        var msg=String(err&&err.message?err.message:"Validasi gagal");
+        if(/unauthorized|login diperlukan|akses ditolak/i.test(msg)){
+          setProviderAuthState(p,"expired","Session aplikasi berakhir. Login ulang diperlukan.");
+          setLiveMsg("Session aplikasi berakhir. Login ulang lalu validasi ulang provider.");
+          return false;
+        }
+        setProviderAuthState(p,"error",sanitizePublicError(msg)||"Validasi provider gagal.");
+        setLiveMsg("Validasi session gagal. Coba lagi.");
+        return false;
+      });
+  }
 
   function req(path,method,payload){
     var opts={method:method||"GET",headers:{"Content-Type":"application/json"}};
@@ -1087,11 +1215,16 @@ function App(){
   var metricOpts=[{key:"roas",label:"ROAS",color:"#1d9e75"},{key:"ctr",label:"CTR%",color:"#185fa5"},{key:"cpa",label:"CPA",color:"#ba7517"},{key:"spend",label:"Spend",color:"#534ab7"},{key:"cpm",label:"CPM",color:"#e24b4a"}];
   var selM=metricOpts.find(function(m){return m.key===analyticsMetric;})||metricOpts[0];
   var hasData=!!(data.campaigns.length||data.adsets.length||data.ads.length);
+  var activeProvider=(aiCfg.provider||"builtin").toLowerCase();
+  var activeProviderAuth=getAiProviderAuthState_(aiAuth,activeProvider);
+  var activeProviderAuthMeta=aiAuthMeta_(activeProviderAuth.state);
 
   function runAI(){
     if(!aiInput.trim())return;
     setAiLoading(true);setAiResult("");
     var provider=(aiCfg.provider||"builtin").toLowerCase();
+    var providerAuth=getAiProviderAuthState_(aiAuth,provider);
+    var useLegacyKey=!!aiCfg.useLegacyKey;
     var userApiKey=String(aiCfg.apiKey||"").trim();
     var model=String(aiCfg.model||"").trim();
     var localFallback=function(msg){
@@ -1104,13 +1237,31 @@ function App(){
     };
 
     if(provider==="builtin")return localFallback("Provider AI belum dipilih (builtin).");
+    if(!useLegacyKey&&providerAuth.state!=="connected"){
+      return localFallback("Session "+provider+" belum aktif. Buka Settings -> Login Browser -> Validasi Session.");
+    }
 
-    req("/app/ai","POST",{question:aiInput,provider:provider,user_api_key:userApiKey,model:model})
+    var payload={question:aiInput,provider:provider,model:model};
+    if(useLegacyKey&&userApiKey)payload.user_api_key=userApiKey;
+
+    req("/app/ai","POST",payload)
       .then(function(json){
-        setAiResult((json&&json.answer)||"Tidak ada respons.");
+        var answer=(json&&json.answer)||"Tidak ada respons.";
+        if(/api key/i.test(String(answer))&&/belum tersedia/i.test(String(answer))){
+          setProviderAuthState(provider,"error","Kredensial provider belum tersedia di secure relay.");
+        }else if(!useLegacyKey){
+          setProviderAuthState(provider,"connected","");
+        }
+        setAiResult(answer);
         setAiLoading(false);
       })
-      .catch(function(e){localFallback("AI service error: "+(e&&e.message?e.message:"unknown"));});
+      .catch(function(e){
+        var msg=String(e&&e.message?e.message:"unknown");
+        if(!useLegacyKey&&/unauthorized|login diperlukan|akses ditolak/i.test(msg)){
+          setProviderAuthState(provider,"expired","Session aplikasi berakhir. Login ulang diperlukan.");
+        }
+        localFallback("AI service error: "+msg);
+      });
   }
 
   // Render tabs
@@ -1423,7 +1574,11 @@ function App(){
     // AI
     tab==="AI"&&h("div",null,
       h("div",{style:{fontSize:14,fontWeight:500,marginBottom:8}},"AI Analyzer"),
-      h("div",{style:{fontSize:13,color:"#888",marginBottom:16}},"Provider: "+(aiCfg.provider||"builtin")+" via secure relay."),
+      h("div",{style:{fontSize:13,color:"#888",marginBottom:6}},"Provider: "+(aiCfg.provider||"builtin")+" via secure relay."),
+      activeProvider!=="builtin"&&h("div",{className:"row",style:{gap:6,marginBottom:12}},
+        h("span",{className:"tag",style:{background:activeProviderAuthMeta.bg,color:activeProviderAuthMeta.color}},activeProviderAuthMeta.label),
+        h("span",{style:{fontSize:12,color:"#888"}},activeProviderAuth.error||"Session browser diperlukan untuk menjalankan AI tanpa API key manual.")
+      ),
       h("textarea",{style:{height:80,resize:"vertical",marginBottom:10},placeholder:"Contoh: Ad mana yang harus dipause hari ini?",value:aiInput,onChange:function(e){setAiInput(e.target.value);}}),
       h("button",{className:"btnp",style:{marginBottom:16},onClick:runAI,disabled:aiLoading},aiLoading?"Menganalisis...":"Analisis"),
       aiResult&&h("div",{style:{background:"#f5f5f3",borderRadius:8,padding:"16px",fontSize:13,lineHeight:1.7,whiteSpace:"pre-wrap",minHeight:80}},aiResult),
@@ -1458,8 +1613,8 @@ function App(){
     tab==="Settings"&&h("div",null,
       h("div",{style:{fontSize:14,fontWeight:500,marginBottom:16}},"Settings"),
       h("div",{className:"card"},
-        h("div",{style:{fontWeight:500,marginBottom:4}},"AI Provider (Opsional)"),
-        h("div",{style:{fontSize:12,color:"#888",marginBottom:12}},"Pilih provider, opsional isi API key/model. API key hanya tersimpan jika kamu centang 'Simpan key di perangkat ini'."),
+        h("div",{style:{fontWeight:500,marginBottom:4}},"AI Provider (Browser Session)"),
+        h("div",{style:{fontSize:12,color:"#888",marginBottom:12}},"Default memakai browser/session login + secure relay. API key manual dipertahankan hanya sebagai mode transisi."),
         h("div",{style:{marginBottom:10}},
           h("select",{value:aiCfg.provider||"builtin",onChange:function(e){var v=e.target.value;setAiCfg(function(c){return Object.assign({},c,{provider:v});});}},
             h("option",{value:"builtin"},"Builtin (tanpa API key)"),
@@ -1469,15 +1624,33 @@ function App(){
           )
         ),
         aiCfg.provider!=="builtin"&&h("div",null,
-          h("div",{style:{marginBottom:10}},
-            h("input",{type:"password",placeholder:"API Key (opsional)",value:aiCfg.apiKey||"",onChange:function(e){var v=e.target.value;setAiCfg(function(c){return Object.assign({},c,{apiKey:v});});}})
+          h("div",{className:"row",style:{marginBottom:10,justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}},
+            h("div",{className:"row",style:{gap:6}},
+              h("span",{className:"tag",style:{background:activeProviderAuthMeta.bg,color:activeProviderAuthMeta.color}},activeProviderAuthMeta.label),
+              h("span",{style:{fontSize:12,color:"#888"}},activeProviderAuth.checked_at?"Cek terakhir: "+new Date(activeProviderAuth.checked_at).toLocaleString("id-ID"):"Belum pernah divalidasi")
+            ),
+            h("div",{className:"row",style:{gap:6}},
+              h("button",{className:"btnp",onClick:function(){connectProviderBrowser(activeProvider);}},"Login Browser"),
+              h("button",{className:"btnp",onClick:function(){verifyProviderSession(activeProvider);}},"Validasi Session"),
+              h("button",{onClick:function(){setProviderAuthState(activeProvider,"disconnected","");}},"Putuskan")
+            )
           ),
+          activeProviderAuth.error&&h("div",{style:{fontSize:12,color:"#993c1d",marginBottom:10}},activeProviderAuth.error),
           h("div",{style:{marginBottom:10}},
             h("input",{type:"text",placeholder:"Model (opsional, contoh: gpt-4o-mini / gemini-1.5-flash)",value:aiCfg.model||"",onChange:function(e){var v=e.target.value;setAiCfg(function(c){return Object.assign({},c,{model:v});});}})
           ),
-          h("label",{className:"row",style:{marginBottom:6,fontSize:12,color:"#555",gap:6}},
-            h("input",{type:"checkbox",style:{width:14,height:14},checked:!!aiCfg.rememberKey,onChange:function(e){var v=e.target.checked;setAiCfg(function(c){return Object.assign({},c,{rememberKey:v});});}}),
-            h("span",null,"Simpan key di perangkat ini")
+          h("label",{className:"row",style:{marginBottom:8,fontSize:12,color:"#555",gap:6}},
+            h("input",{type:"checkbox",style:{width:14,height:14},checked:!!aiCfg.useLegacyKey,onChange:function(e){var v=e.target.checked;setAiCfg(function(c){return Object.assign({},c,{useLegacyKey:v});});}}),
+            h("span",null,"Aktifkan mode legacy API key (transisi)")
+          ),
+          aiCfg.useLegacyKey&&h("div",null,
+            h("div",{style:{marginBottom:10}},
+              h("input",{type:"password",placeholder:"API Key legacy (opsional)",value:aiCfg.apiKey||"",onChange:function(e){var v=e.target.value;setAiCfg(function(c){return Object.assign({},c,{apiKey:v});});}})
+            ),
+            h("label",{className:"row",style:{marginBottom:6,fontSize:12,color:"#555",gap:6}},
+              h("input",{type:"checkbox",style:{width:14,height:14},checked:!!aiCfg.rememberKey,onChange:function(e){var v=e.target.checked;setAiCfg(function(c){return Object.assign({},c,{rememberKey:v});});}}),
+              h("span",null,"Simpan key di perangkat ini")
+            )
           )
         ),
         h("div",{className:"row",style:{marginTop:10}},
