@@ -1,14 +1,29 @@
 # Deploy Step-by-Step (Cloudflare + GAS)
 
-Dokumen ini fokus untuk membuat `https://ads.cepat.top` tidak lagi error `404 /auth/login` dan memastikan alur login/register berjalan benar lewat backend.
+Dokumen ini fokus untuk membuat `https://ads.cepat.top` tidak lagi error `404 /auth/login` dan memastikan alur login/register berjalan benar lewat backend, dengan konfigurasi seminimal mungkin.
 
 ## Arsitektur yang benar
 
 - Frontend: `https://ads.cepat.top` (static site)
-- API/Auth Gateway: Cloudflare Worker (disarankan di `https://api.ads.cepat.top`)
+- API/Auth Gateway: Cloudflare Worker (bisa same-domain `https://ads.cepat.top/auth/*`)
 - Data/Auth source: Google Apps Script Web App + Google Sheets
 
-> Root problem 404 biasanya karena frontend static memanggil path relatif `/auth/login` ke host static, padahal route auth ada di Worker/GAS.
+> Root problem 404 biasanya karena frontend static memanggil `/auth/login` ke host yang tidak terhubung ke Worker route.
+
+## Mode Simple (minimal setting)
+
+Kalau Anda mau setup paling sederhana:
+
+1. Frontend tetap di `https://ads.cepat.top`
+2. Worker dipasang di route yang sama domain, minimal:
+   - `ads.cepat.top/auth/*`
+   - `ads.cepat.top/app/*`
+3. Set **1 secret wajib** di Worker:
+   - `GAS_WEB_APP_URL`
+4. Set **1 property wajib** di GAS:
+   - `DB_TARGET_SHEET_ID`
+
+Dengan mode ini, frontend tidak perlu expose URL GAS dan request auth tetap lewat endpoint `/auth/*`.
 
 ---
 
@@ -30,7 +45,7 @@ Dokumen ini fokus untuk membuat `https://ads.cepat.top` tidak lagi error `404 /a
 3. Di **Project Settings -> Script properties**, isi minimal:
    - `DB_TARGET_SHEET_ID=1hbhtYLqzSIRlZoIiB0my-05tSIXdgAOjPbgpf7dJIEs`
    - `AUTH_PASSWORD_MODE=PLAINTEXT` *(jika ingin akun dummy plaintext sesuai kebutuhan Anda)*
-   - `INTERNAL_API_TOKEN=<token-internal-anda>` *(wajib jika lewat worker protected actions)*
+   - `INTERNAL_API_TOKEN=<token-internal-anda>` *(opsional untuk hardening tambahan)*
 4. Deploy ulang sebagai Web App:
    - **Deploy -> Manage deployments -> Edit -> New version -> Deploy**
 5. Gunakan URL Web App aktif:
@@ -53,7 +68,13 @@ wrangler kv namespace create AI_CACHE_KV
 2. Isi `worker/wrangler.toml` (vars) minimal:
    - `ALLOWED_ORIGIN = "https://ads.cepat.top"`
    - `GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyEQM12lmuZ_Q7NrBC_OVEHXDHN49oLEe52GLuMbFbSiH3HSzz6PK1S7DULwnfuTp4U/exec"`
-3. Set secret Worker:
+3. Set secret Worker minimal:
+
+```bash
+wrangler secret put GAS_WEB_APP_URL
+```
+
+Secret tambahan (opsional untuk hardening):
 
 ```bash
 wrangler secret put INTERNAL_API_TOKEN
@@ -69,9 +90,14 @@ wrangler deploy
 
 ---
 
-## 4) Mapping domain API (WAJIB untuk hindari 404 auth)
+## 4) Mapping route/domain Worker
 
-Gunakan domain API terpisah untuk Worker:
+Pilihan A (direkomendasikan untuk mode simple): route di domain yang sama
+
+- `ads.cepat.top/auth/*` -> Worker `ads`
+- `ads.cepat.top/app/*` -> Worker `ads`
+
+Pilihan B (domain API terpisah):
 
 - `api.ads.cepat.top` -> Cloudflare Worker `ads`
 
@@ -95,8 +121,8 @@ Harus return `200` dengan JSON `{ "ok": true, ... }`.
 
 Frontend (`index.html`) sudah dipatch agar:
 
-- Pada host `ads.cepat.top`, auth route otomatis fallback ke GAS (`action=login/register/verify/logout`) jika endpoint utama tidak tersedia.
-- Tidak lagi hard-fail ke `/auth/login` relatif saja.
+- Tidak lagi memanggil GAS URL langsung dari browser.
+- Auth call tetap ke endpoint gateway (`/auth/*`), dan fallback ke `https://api.ads.cepat.top` jika tersedia.
 
 Deploy static terbaru ke origin `ads.cepat.top` (sesuai pipeline hosting Anda), lalu hard refresh browser (`Ctrl+F5`).
 
@@ -161,7 +187,8 @@ Penyebab: frontend lama masih aktif / belum redeploy.
 Solusi:
 1. Redeploy `index.html` terbaru.
 2. Hard refresh (`Ctrl+F5`) / incognito.
-3. Pastikan domain API worker aktif (`api.ads.cepat.top/health`).
+3. Pastikan Worker route benar-benar aktif untuk `/auth/*` di `ads.cepat.top`.
+4. Jika pakai subdomain API, pastikan DNS `api.ads.cepat.top` resolve dan `api.ads.cepat.top/health` status 200.
 
 ### Error: `INTERNAL_API_TOKEN not configured`
 
