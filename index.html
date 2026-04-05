@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ad Campaign Tracker v1.0</title>
+<link rel="icon" href="data:,">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <style>
@@ -565,6 +566,7 @@ function AccessDeniedPage(props){
 
 function AdminUserPanel(props){
   var authToken=props.authToken;
+  var adminApiReady=HAS_EXPLICIT_APIBASE||(location.hostname||"").toLowerCase()!=="ads.cepat.top";
   var st1=useState([]),users=st1[0],setUsers=st1[1];
   var st2=useState(false),loading=st2[0],setLoading=st2[1];
   var st3=useState(""),search=st3[0],setSearch=st3[1];
@@ -575,10 +577,16 @@ function AdminUserPanel(props){
   var st8=useState(""),msg=st8[0],setMsg=st8[1];
   var st9=useState(false),showCreate=st9[0],setShowCreate=st9[1];
   
-  useEffect(function(){if(authToken){loadUsers();loadStats();}},[authToken]);
+  useEffect(function(){if(authToken&&adminApiReady){loadUsers();loadStats();}},[authToken,adminApiReady]);
+
+  function showAdminApiUnavailable(){
+    setMsg("Mode lokal: endpoint Admin belum dikonfigurasi.");
+    setTimeout(function(){setMsg("");},3000);
+  }
 
   function loadUsers(){
     if(!authToken)return;
+    if(!adminApiReady){setUsers([]);showAdminApiUnavailable();return;}
     setLoading(true);
     authReq("/admin/users",{search:search,role:roleFilter,payment_status:statusFilter},"GET")
       .then(function(res){setLoading(false);if(res.ok)setUsers(res.users||[]);})
@@ -587,11 +595,13 @@ function AdminUserPanel(props){
 
   function loadStats(){
     if(!authToken)return;
+    if(!adminApiReady){setStats(null);return;}
     authReq("/admin/stats",{},"GET")
       .then(function(res){if(res.ok)setStats(res.stats);});
   }
   
   function updateUser(userId,updates){
+    if(!adminApiReady){showAdminApiUnavailable();return;}
     authReq("/admin/user",Object.assign({user_id:userId},updates))
       .then(function(res){
         if(res.ok){setMsg("User berhasil diupdate");loadUsers();loadStats();setEditUser(null);}
@@ -602,6 +612,7 @@ function AdminUserPanel(props){
   
   function deleteUser(userId){
     if(!confirm("Yakin hapus user ini?"))return;
+    if(!adminApiReady){showAdminApiUnavailable();return;}
     authReq("/admin/user/delete",{user_id:userId})
       .then(function(res){
         if(res.ok){setMsg("User dihapus");loadUsers();loadStats();}
@@ -611,6 +622,7 @@ function AdminUserPanel(props){
   }
   
   function createUser(userData){
+    if(!adminApiReady){showAdminApiUnavailable();return;}
     authReq("/admin/users",Object.assign({},userData))
       .then(function(res){
         if(res.ok){setMsg("User berhasil dibuat");loadUsers();loadStats();setShowCreate(false);}
