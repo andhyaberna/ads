@@ -7,6 +7,9 @@ var PUBLIC_ACTIONS = ['register', 'login', 'create_first_admin', 'verify_token']
 
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) || '';
+  if (e && e.parameter && e.parameter.db_target_sheet_id) {
+    setDbTargetSheetIdOverride_(e.parameter.db_target_sheet_id);
+  }
   if (action) {
     // Check if this action requires internal token
     if (PUBLIC_ACTIONS.indexOf(action) < 0) {
@@ -36,6 +39,10 @@ function doPost(e) {
   }
 
   var action = payload.action || (e && e.parameter && e.parameter.action) || '';
+  var sheetOverride = payload.db_target_sheet_id || (e && e.parameter ? e.parameter.db_target_sheet_id : '');
+  if (sheetOverride) {
+    setDbTargetSheetIdOverride_(sheetOverride);
+  }
   if (!action) return jsonResponse({ ok: false, error: 'Missing action' });
 
   // Check if this action requires internal token

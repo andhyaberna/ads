@@ -79,8 +79,8 @@ function isSensitiveSettingKey_(key) {
 function requireInternalApiToken_(token) {
   var expected = String(getScriptConfig_('INTERNAL_API_TOKEN', '') || '');
   if (!expected) {
-    // secure-by-default: do not allow action endpoints before token is configured
-    throw new Error('Forbidden: INTERNAL_API_TOKEN not configured');
+    // simple mode: if token is not configured, allow gateway requests
+    return;
   }
   if (!token || String(token) !== expected) {
     throw new Error('Unauthorized: invalid internal token');

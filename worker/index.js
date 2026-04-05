@@ -215,9 +215,9 @@ async function callGasAuthAction_(action, payload, env) {
     return { ok: false, status: 500, error: 'Gateway not configured' };
   }
 
-  const requestBody = Object.assign({}, payload || {}, {
+  const requestBody = withGatewaySheetId_(Object.assign({}, payload || {}, {
     action
-  });
+  }), env);
 
   try {
     const res = await fetch(url, {
@@ -437,14 +437,14 @@ async function handleAppAi(request, env, corsHeaders) {
 async function callGasAction_(action, payload, env) {
   const url = String(env.GAS_WEB_APP_URL || '').trim();
   const token = String(env.INTERNAL_API_TOKEN || '').trim();
-  if (!url || !token) {
+  if (!url) {
     return { ok: false, status: 500, error: 'Gateway not configured' };
   }
 
-  const requestBody = Object.assign({}, payload || {}, {
-    action,
-    internal_token: token
-  });
+  const requestBody = withGatewaySheetId_(Object.assign({}, payload || {}, {
+    action
+  }), env);
+  if (token) requestBody.internal_token = token;
 
   try {
     const res = await fetch(url, {
@@ -463,6 +463,15 @@ async function callGasAction_(action, payload, env) {
   } catch (err) {
     return { ok: false, status: 502, error: 'Upstream unavailable' };
   }
+}
+
+function withGatewaySheetId_(payload, env) {
+  const body = Object.assign({}, payload || {});
+  const sheetId = String(env.DB_TARGET_SHEET_ID || '').trim();
+  if (sheetId && !body.db_target_sheet_id) {
+    body.db_target_sheet_id = sheetId;
+  }
+  return body;
 }
 
 function normalizeGasResponseObj_(upstream, reqId) {
