@@ -80,9 +80,14 @@ export default {
     if (path === '/admin/users' && request.method === 'GET') {
       return handleProtectedAction(request, env, corsHeaders, 'list_users');
     }
-    
+
     if (path === '/admin/users' && request.method === 'POST') {
-      return handleProtectedAction(request, env, corsHeaders, 'create_user');
+      // Distinguish list vs create: if payload has 'password' field, it's a create
+      const peek = request.clone();
+      let body = {};
+      try { body = await peek.json(); } catch (_) {}
+      const action = body.password ? 'create_user' : 'list_users';
+      return handleProtectedAction(request, env, corsHeaders, action);
     }
     
     if (path === '/admin/user' && request.method === 'GET') {
@@ -105,7 +110,7 @@ export default {
       return handleProtectedAction(request, env, corsHeaders, 'bulk_update_status');
     }
     
-    if (path === '/admin/stats' && request.method === 'GET') {
+    if (path === '/admin/stats' && (request.method === 'GET' || request.method === 'POST')) {
       return handleProtectedAction(request, env, corsHeaders, 'get_user_stats');
     }
 

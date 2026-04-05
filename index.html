@@ -575,22 +575,24 @@ function AdminUserPanel(props){
   var st8=useState(""),msg=st8[0],setMsg=st8[1];
   var st9=useState(false),showCreate=st9[0],setShowCreate=st9[1];
   
-  useEffect(function(){loadUsers();loadStats();},[]);
-  
+  useEffect(function(){if(authToken){loadUsers();loadStats();}},[authToken]);
+
   function loadUsers(){
+    if(!authToken)return;
     setLoading(true);
-    authReq("/admin/users",{search:search,role:roleFilter,payment_status:statusFilter,auth_token:authToken},"GET")
+    authReq("/admin/users",{search:search,role:roleFilter,payment_status:statusFilter},"GET")
       .then(function(res){setLoading(false);if(res.ok)setUsers(res.users||[]);})
       .catch(function(){setLoading(false);});
   }
-  
+
   function loadStats(){
-    authReq("/admin/stats",{auth_token:authToken},"GET")
+    if(!authToken)return;
+    authReq("/admin/stats",{},"GET")
       .then(function(res){if(res.ok)setStats(res.stats);});
   }
   
   function updateUser(userId,updates){
-    authReq("/admin/user",Object.assign({auth_token:authToken,user_id:userId},updates))
+    authReq("/admin/user",Object.assign({user_id:userId},updates))
       .then(function(res){
         if(res.ok){setMsg("User berhasil diupdate");loadUsers();loadStats();setEditUser(null);}
         else setMsg(res.error||"Gagal update");
@@ -600,7 +602,7 @@ function AdminUserPanel(props){
   
   function deleteUser(userId){
     if(!confirm("Yakin hapus user ini?"))return;
-    authReq("/admin/user/delete",{auth_token:authToken,user_id:userId})
+    authReq("/admin/user/delete",{user_id:userId})
       .then(function(res){
         if(res.ok){setMsg("User dihapus");loadUsers();loadStats();}
         else setMsg(res.error||"Gagal hapus");
@@ -609,7 +611,7 @@ function AdminUserPanel(props){
   }
   
   function createUser(userData){
-    authReq("/admin/users",Object.assign({auth_token:authToken},userData))
+    authReq("/admin/users",Object.assign({},userData))
       .then(function(res){
         if(res.ok){setMsg("User berhasil dibuat");loadUsers();loadStats();setShowCreate(false);}
         else setMsg(res.error||"Gagal buat user");
