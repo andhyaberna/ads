@@ -16,6 +16,11 @@ export default {
       return json({ ok: true, worker: 'ads', ts: Date.now() }, 200, corsHeaders);
     }
 
+    if (path === '/health/upstream' && request.method === 'GET') {
+      const diag = await checkUpstreamHealth_(env);
+      return json(diag, diag.ok ? 200 : 502, corsHeaders);
+    }
+
     if (path === '/' && request.method === 'GET') {
       return json({ ok: true, service: 'ads-gateway' }, 200, corsHeaders);
     }
@@ -504,6 +509,33 @@ function resolveGasUrls_(env) {
     if (list.indexOf(defaults[i]) < 0) list.push(defaults[i]);
   }
   return list;
+}
+
+async function checkUpstreamHealth_(env) {
+  const urls = resolveGasUrls_(env);
+  if (!urls.length) {
+    return { ok: false, error: 'GAS url not configured', urls: [] };
+  }
+
+  const checks = [];
+  for (let i = 0; i < urls.length; i++) {
+    const url = urls[i];
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'verify_token', auth_token: 'health_probe' })
+      });
+      checks.push({ url, status: res.status, ok: true });
+      if (res.status > 0) {
+        return { ok: true, checks };
+      }
+    } catch (err) {
+      checks.push({ url, ok: false, error: String(err && err.message ? err.message : err) });
+    }
+  }
+
+  return { ok: false, error: 'all upstream attempts failed', checks };
 }
 
 function normalizeGasResponseObj_(upstream, reqId) {
