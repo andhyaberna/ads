@@ -693,6 +693,67 @@ function DonutViz(props){
   );
 }
 
+function excelEscape_(value){
+  return String(value===undefined||value===null?"":value)
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/\"/g,"&quot;")
+    .replace(/'/g,"&apos;");
+}
+
+function excelType_(value){
+  if(typeof value==="number"&&isFinite(value))return "Number";
+  return "String";
+}
+
+function excelSheetXml_(name,columns,rows){
+  var colList=(columns||[]).map(function(c){return c&&c.label?String(c.label):String(c);});
+  var keyList=(columns||[]).map(function(c){return c&&c.key?String(c.key):String(c);});
+  var out=[];
+  out.push('<Worksheet ss:Name="'+excelEscape_(String(name||"Sheet").slice(0,31))+'"><Table>');
+  out.push("<Row>");
+  colList.forEach(function(label){out.push('<Cell><Data ss:Type="String">'+excelEscape_(label)+"</Data></Cell>");});
+  out.push("</Row>");
+  (rows||[]).forEach(function(row){
+    out.push("<Row>");
+    keyList.forEach(function(key){
+      var val=row&&Object.prototype.hasOwnProperty.call(row,key)?row[key]:"";
+      var type=excelType_(val);
+      out.push('<Cell><Data ss:Type="'+type+'">'+excelEscape_(val)+"</Data></Cell>");
+    });
+    out.push("</Row>");
+  });
+  out.push("</Table></Worksheet>");
+  return out.join("");
+}
+
+function exportExcelWorkbook_(baseName,sheets){
+  var valid=(sheets||[]).filter(function(s){return s&&s.columns&&s.columns.length&&s.rows&&s.rows.length;});
+  if(!valid.length)throw new Error("Data kosong, tidak ada yang bisa diexport.");
+  var xml=[];
+  xml.push('<?xml version="1.0"?>');
+  xml.push('<?mso-application progid="Excel.Sheet"?>');
+  xml.push('<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" xmlns:html="http://www.w3.org/TR/REC-html40">');
+  valid.forEach(function(s){xml.push(excelSheetXml_(s.name,s.columns,s.rows));});
+  xml.push("</Workbook>");
+  var blob=new Blob([xml.join("")],{type:"application/vnd.ms-excel;charset=utf-8;"});
+  var fileName=(String(baseName||"report").replace(/[^a-zA-Z0-9-_]+/g,"_")+".xls");
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement("a");
+  a.href=url;
+  a.download=fileName;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){URL.revokeObjectURL(url);a.remove();},50);
+}
+
+function exportTimestamp_(){
+  var d=new Date();
+  var p=function(n){return String(n).padStart(2,"0");};
+  return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+"_"+p(d.getHours())+p(d.getMinutes());
+}
+
 function BrandMark(props){
   var size=props&&props.size||48;
   return h("div",{className:"brand-logo",style:{width:size,height:size,borderRadius:Math.round(size*0.32)}},
@@ -1217,6 +1278,7 @@ function App(){
   var st17=useState({}),noteEdit=st17[0],setNoteEdit=st17[1];
   var st18=useState("syncing"),liveState=st18[0],setLiveState=st18[1];
   var st19=useState(""),liveMsg=st19[0],setLiveMsg=st19[1];
+  var st20=useState({key:"",loading:false}),exportState=st20[0],setExportState=st20[1];
 
   var fRefs={campaign:useRef(),adset:useRef(),ad:useRef(),periodA:useRef(),periodB:useRef()};
   
@@ -1582,6 +1644,27 @@ function App(){
     }
   }
 
+  function buildExportButton(reportKey,label,onClick,disabled){
+    var busy=exportState.loading&&exportState.key===reportKey;
+    return h("button",{className:"btnp",onClick:onClick,disabled:!!disabled||exportState.loading,style:{padding:"6px 10px",fontSize:11}},busy?"Menyiapkan...":(label||"Download Excel"));
+  }
+
+  function runReportExport(reportKey,filePrefix,buildSheets){
+    if(exportState.loading)return;
+    setExportState({key:reportKey,loading:true});
+    setLiveMsg("Menyiapkan export Excel...");
+    Promise.resolve().then(function(){
+      var sheets=buildSheets();
+      exportExcelWorkbook_(filePrefix+"_"+exportTimestamp_(),sheets);
+      setLiveMsg("Download Excel dimulai.");
+    }).catch(function(err){
+      var msg=sanitizePublicError(err&&err.message?err.message:"Export gagal");
+      setLiveMsg("Export gagal"+(msg?": "+msg:""));
+    }).finally(function(){
+      setExportState({key:"",loading:false});
+    });
+  }
+
   var topLevel=data.campaigns.length?data.campaigns:data.adsets.length?data.adsets:data.ads;
 
   // Filter out items with zero spend/impressions (inactive ads)
@@ -1646,6 +1729,12 @@ function App(){
   var metricOpts=[{key:"roas",label:"ROAS",color:"#1d9e75"},{key:"ctr",label:"CTR%",color:"#185fa5"},{key:"cpa",label:"CPA",color:"#ba7517"},{key:"spend",label:"Spend",color:"#534ab7"},{key:"cpm",label:"CPM",color:"#e24b4a"}];
   var selM=metricOpts.find(function(m){return m.key===analyticsMetric;})||metricOpts[0];
   var hasData=!!(data.campaigns.length||data.adsets.length||data.ads.length);
+  var briefItems=allItems.filter(function(c){
+    if(!(c._level==="ad"||c._level==="campaign"))return false;
+    return calcM(c).spend>0;
+  });
+  var alertItems=allItems.filter(function(c){return c._alerts.length>0;});
+  var hierarchyCampaignNames=Array.from(new Set([].concat(data.campaigns.map(function(c){return c.name;}),data.adsets.map(function(a){return a.campaignName;}),data.ads.map(function(a){return a.campaignName;})).filter(Boolean)));
   var activeProvider=(aiCfg.provider||"builtin").toLowerCase();
   var activeProviderAuth=getAiProviderAuthState_(aiAuth,activeProvider);
   var activeProviderAuthMeta=aiAuthMeta_(activeProviderAuth.state);
@@ -1695,6 +1784,136 @@ function App(){
       });
   }
 
+  function exportDashboardExcel(){
+    return runReportExport("dashboard","dashboard_report",function(){
+      return [
+        {
+          name:"Ringkasan",
+          columns:[{key:"metric",label:"Metric"},{key:"value",label:"Value"}],
+          rows:[
+            {metric:"Spend",value:totalSpend},{metric:"Revenue",value:totalRevenue},{metric:"ROAS",value:overallRoas===null?"-":Number(fmt(overallRoas,2))},
+            {metric:"Campaign Aktif",value:activeCampaigns.length},{metric:"Ad Set Aktif",value:activeAdsets.length},{metric:"Ad Aktif",value:activeAds.length},
+            {metric:"Urgent",value:urgentCount},{metric:"Alert",value:alertCount}
+          ]
+        },
+        {
+          name:"Campaign",
+          columns:[
+            {key:"name",label:"Campaign"},{key:"spend",label:"Spend"},{key:"revenue",label:"Revenue"},{key:"roas",label:"ROAS"},
+            {key:"ctr",label:"CTR"},{key:"cpm",label:"CPM"},{key:"cpa",label:"CPA"},{key:"impressions",label:"Impressions"},{key:"results",label:"Results"}
+          ],
+          rows:chartData.map(function(r){return{name:r.fullName||r.name,spend:r.spend,revenue:r.revenue,roas:r.roas,ctr:r.ctr,cpm:r.cpm,cpa:r.cpa,impressions:r.impressions,results:r.results};})
+        }
+      ];
+    });
+  }
+
+  function exportRekomendasiExcel(){
+    return runReportExport("rekomendasi","rekomendasi_report",function(){
+      var rows=[];
+      filtered.forEach(function(c){
+        var m=calcM(c);
+        (c._diag||[]).forEach(function(issue){
+          rows.push({
+            level:c._level,name:c.name,priority:issue.priority,status:issue.status,diagnosis:issue.diagnosis,action:issue.action,
+            spend:m.spend,roas:m.roas,ctr:m.ctr,cpm:m.cpm,cpa:m.cpa,freq:m.freq,alerts:(c._alerts||[]).length,note:data.notes[c.id||c.name]||""
+          });
+        });
+      });
+      return [{
+        name:"Rekomendasi",
+        columns:[
+          {key:"level",label:"Level"},{key:"name",label:"Nama"},{key:"priority",label:"Priority"},{key:"status",label:"Status"},
+          {key:"diagnosis",label:"Diagnosis"},{key:"action",label:"Aksi"},{key:"spend",label:"Spend"},{key:"roas",label:"ROAS"},
+          {key:"ctr",label:"CTR"},{key:"cpm",label:"CPM"},{key:"cpa",label:"CPA"},{key:"freq",label:"Frekuensi"},{key:"alerts",label:"Alert Count"},{key:"note",label:"Catatan"}
+        ],
+        rows:rows
+      }];
+    });
+  }
+
+  function exportBriefExcel(){
+    return runReportExport("brief","creative_brief_report",function(){
+      var rows=[];
+      briefItems.forEach(function(c){
+        var main=(c._diag&&c._diag[0])||{};
+        generateBrief(c).forEach(function(b){
+          rows.push({
+            level:c._level,name:c.name,status:main.status||"",problem:b.problem,root:b.root,format:b.format,hook:b.hook,angles:(b.angles||[]).join(" | ")
+          });
+        });
+      });
+      return [{
+        name:"CreativeBrief",
+        columns:[{key:"level",label:"Level"},{key:"name",label:"Nama"},{key:"status",label:"Status"},{key:"problem",label:"Problem"},{key:"root",label:"Root Cause"},{key:"angles",label:"Angle"},{key:"format",label:"Format"},{key:"hook",label:"Hook Note"}],
+        rows:rows
+      }];
+    });
+  }
+
+  function exportPeriodeExcel(){
+    return runReportExport("periode","perbandingan_periode",function(){
+      return [{
+        name:"PeriodeCompare",
+        columns:[{key:"name",label:"Campaign"},{key:"roasA",label:"ROAS A"},{key:"roasB",label:"ROAS B"},{key:"roasDelta",label:"Delta ROAS %"},{key:"ctrA",label:"CTR A"},{key:"ctrB",label:"CTR B"},{key:"ctrDelta",label:"Delta CTR %"},{key:"cpaA",label:"CPA A"},{key:"cpaB",label:"CPA B"},{key:"cpaDelta",label:"Delta CPA %"}],
+        rows:periodeData.map(function(r){return{name:r.name,roasA:r.roasA,roasB:r.roasB,roasDelta:r.roasDelta,ctrA:r.ctrA,ctrB:r.ctrB,ctrDelta:r.ctrDelta,cpaA:r.cpaA,cpaB:r.cpaB,cpaDelta:r.cpaDelta};})
+      }];
+    });
+  }
+
+  function exportAlertExcel(){
+    return runReportExport("alert","threshold_alert_report",function(){
+      var rows=[];
+      alertItems.forEach(function(c){
+        (c._alerts||[]).forEach(function(a){
+          rows.push({level:c._level,name:c.name,metric:a.metric,value:a.value,threshold:a.threshold,severity:a.severity});
+        });
+      });
+      return [{
+        name:"Alert",
+        columns:[{key:"level",label:"Level"},{key:"name",label:"Nama"},{key:"metric",label:"Metric"},{key:"value",label:"Nilai"},{key:"threshold",label:"Threshold"},{key:"severity",label:"Severity"}],
+        rows:rows
+      }];
+    });
+  }
+
+  function exportHierarkiExcel(){
+    return runReportExport("hierarki","hierarki_report",function(){
+      var rows=[];
+      hierarchyCampaignNames.forEach(function(campName){
+        var camp=data.campaigns.find(function(c){return c.name===campName;})||{name:campName};
+        var cm=calcM(camp);
+        rows.push({campaign:campName,adset:"",ad:"",level:"campaign",spend:cm.spend,roas:cm.roas,ctr:cm.ctr,freq:cm.freq,status:(diagnose(camp,"campaign")[0]||{}).status||""});
+        data.adsets.filter(function(a){return a.campaignName===campName;}).forEach(function(as){
+          var am=calcM(as);
+          rows.push({campaign:campName,adset:as.name,ad:"",level:"adset",spend:am.spend,roas:am.roas,ctr:am.ctr,freq:am.freq,status:(diagnose(as,"adset")[0]||{}).status||""});
+          data.ads.filter(function(ad){return ad.adsetName===as.name;}).forEach(function(ad){
+            var adm=calcM(ad);
+            rows.push({campaign:campName,adset:as.name,ad:ad.name,level:"ad",spend:adm.spend,roas:adm.roas,ctr:adm.ctr,freq:adm.freq,status:(diagnose(ad,"ad")[0]||{}).status||""});
+          });
+        });
+      });
+      return [{
+        name:"Hierarki",
+        columns:[{key:"campaign",label:"Campaign"},{key:"adset",label:"Ad Set"},{key:"ad",label:"Ad"},{key:"level",label:"Level"},{key:"spend",label:"Spend"},{key:"roas",label:"ROAS"},{key:"ctr",label:"CTR"},{key:"freq",label:"Frekuensi"},{key:"status",label:"Status"}],
+        rows:rows
+      }];
+    });
+  }
+
+  function exportAnalitikExcel(){
+    return runReportExport("analitik","analitik_report",function(){
+      var rows=chartData.map(function(d,idx){
+        return {rank:idx+1,campaign:d.fullName||d.name,spend:d.spend,revenue:d.revenue,roas:d.roas,ctr:d.ctr,cpa:d.cpa,cpm:d.cpm,impressions:d.impressions,results:d.results,selected_metric:selM.label,selected_metric_value:d[selM.key]};
+      });
+      return [{
+        name:"Analitik",
+        columns:[{key:"rank",label:"Rank"},{key:"campaign",label:"Campaign"},{key:"spend",label:"Spend"},{key:"revenue",label:"Revenue"},{key:"roas",label:"ROAS"},{key:"ctr",label:"CTR"},{key:"cpa",label:"CPA"},{key:"cpm",label:"CPM"},{key:"impressions",label:"Impressions"},{key:"results",label:"Results"},{key:"selected_metric",label:"Selected Metric"},{key:"selected_metric_value",label:"Metric Value"}],
+        rows:rows
+      }];
+    });
+  }
+
   // Render tabs
   var tabEls=TABS.map(function(t){
     var isActive=tab===t;
@@ -1741,6 +1960,10 @@ function App(){
 
     // DASHBOARD
     tab==="Dashboard"&&h("div",null,
+      h("div",{className:"row",style:{justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}},
+        h("div",{style:{fontSize:14,fontWeight:600}},"Dashboard Report"),
+        buildExportButton("dashboard","Download Excel",exportDashboardExcel,!hasData)
+      ),
       h("div",{className:"card",style:{background:"linear-gradient(135deg,#ffffff 0%,#f7fafc 100%)"}},
         h("div",{className:"row",style:{justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,flexWrap:"wrap",gap:8}},
           h("div",null,
@@ -1805,7 +2028,8 @@ function App(){
         h("div",{className:"row",style:{gap:6,flexWrap:"wrap"}},
           ["Semua","Urgent","Normal","Monitor"].map(function(p){
             return h("button",{key:p,onClick:function(){setFilterPri(p);},style:{padding:"4px 10px",fontSize:12,fontWeight:filterPri===p?500:400,background:filterPri===p?"#f0f0ee":"transparent"}},p);
-          })
+          }),
+          buildExportButton("rekomendasi","Download Excel",exportRekomendasiExcel,filtered.length===0)
         )
       ),
       !hasData&&h("div",{style:{color:"#888",fontSize:13}},"Belum ada data."),
@@ -1872,7 +2096,10 @@ function App(){
 
     // BRIEF
     tab==="Brief"&&h("div",null,
-      h("div",{style:{fontSize:14,fontWeight:500,marginBottom:4}},"Creative Brief Generator"),
+      h("div",{className:"row",style:{justifyContent:"space-between",marginBottom:4,flexWrap:"wrap",gap:8}},
+        h("div",{style:{fontSize:14,fontWeight:500}},"Creative Brief Generator"),
+        buildExportButton("brief","Download Excel",exportBriefExcel,briefItems.length===0)
+      ),
       h("div",{style:{fontSize:13,color:"#888",marginBottom:16}},"Brief otomatis dari diagnosis performa."),
       !hasData&&h("div",{style:{color:"#888",fontSize:13}},"Belum ada data."),
       allItems.filter(function(c){return c._level==="ad"||c._level==="campaign";}).map(function(c,idx){
@@ -1890,7 +2117,10 @@ function App(){
 
     // PERIODE
     tab==="Periode"&&h("div",null,
-      h("div",{style:{fontSize:14,fontWeight:500,marginBottom:4}},"Perbandingan Periode"),
+      h("div",{className:"row",style:{justifyContent:"space-between",marginBottom:4,flexWrap:"wrap",gap:8}},
+        h("div",{style:{fontSize:14,fontWeight:500}},"Perbandingan Periode"),
+        buildExportButton("periode","Download Excel",exportPeriodeExcel,periodeData.length===0)
+      ),
       h("div",{style:{fontSize:13,color:"#888",marginBottom:16}},"Upload 2 CSV dari periode berbeda."),
       h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}},
         [{w:"A",ref:fRefs.periodA,msg:periodMsgA,pd:periodA},{w:"B",ref:fRefs.periodB,msg:periodMsgB,pd:periodB}].map(function(item){
@@ -1927,7 +2157,10 @@ function App(){
 
     // ALERT
     tab==="Alert"&&h("div",null,
-      h("div",{style:{fontSize:14,fontWeight:500,marginBottom:4}},"Threshold Alert"),
+      h("div",{className:"row",style:{justifyContent:"space-between",marginBottom:4,flexWrap:"wrap",gap:8}},
+        h("div",{style:{fontSize:14,fontWeight:500}},"Threshold Alert"),
+        buildExportButton("alert","Download Excel",exportAlertExcel,alertItems.length===0)
+      ),
       h("div",{style:{fontSize:13,color:"#888",marginBottom:16}},"Set batas metrik. Item yang melewati batas otomatis di-flag."),
       h("div",{className:"card"},
         h("div",{style:{fontWeight:500,marginBottom:12,fontSize:13}},"Konfigurasi Threshold"),
@@ -1963,10 +2196,13 @@ function App(){
 
     // HIERARKI
     tab==="Hierarki"&&h("div",null,
-      h("div",{style:{fontSize:14,fontWeight:500,marginBottom:4}},"Hierarki Campaign - Ad Set - Ad"),
+      h("div",{className:"row",style:{justifyContent:"space-between",marginBottom:4,flexWrap:"wrap",gap:8}},
+        h("div",{style:{fontSize:14,fontWeight:500}},"Hierarki Campaign - Ad Set - Ad"),
+        buildExportButton("hierarki","Download Excel",exportHierarkiExcel,hierarchyCampaignNames.length===0)
+      ),
       h("div",{style:{fontSize:13,color:"#888",marginBottom:16}},"Klik untuk drill down."),
       !hasData&&h("div",{style:{color:"#888",fontSize:13}},"Belum ada data."),
-      Array.from(new Set([].concat(data.campaigns.map(function(c){return c.name;}),data.adsets.map(function(a){return a.campaignName;}),data.ads.map(function(a){return a.campaignName;})).filter(Boolean))).map(function(campName,ci){
+      hierarchyCampaignNames.map(function(campName,ci){
         var camp=data.campaigns.find(function(c){return c.name===campName;})||{name:campName,spend:0};
         var cm=calcM(camp),campExp=expanded["c"+ci];
         var adsets=data.adsets.filter(function(a){return a.campaignName===campName;});
@@ -2012,7 +2248,10 @@ function App(){
 
     // ANALITIK
     tab==="Analitik"&&h("div",null,
-      h("div",{style:{fontSize:14,fontWeight:500,marginBottom:16}},"Analitik"),
+      h("div",{className:"row",style:{justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}},
+        h("div",{style:{fontSize:14,fontWeight:500}},"Analitik"),
+        buildExportButton("analitik","Download Excel",exportAnalitikExcel,!hasData)
+      ),
       !hasData?h("div",{style:{color:"#888",fontSize:13}},"Belum ada data."):h("div",null,
         h("div",{className:"row",style:{flexWrap:"wrap",marginBottom:16}},
           metricOpts.map(function(m){
