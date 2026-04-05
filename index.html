@@ -3,46 +3,168 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ad Campaign Tracker v1.0</title>
-<link rel="icon" href="data:,">
+<title>MATIQ | Meta Ads Tracking, Insights & Quality</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop offset='0%25' stop-color='%230f172a'/%3E%3Cstop offset='100%25' stop-color='%23185fa5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cpath d='M16 43h8V26h-8zm12 0h8V20h-8zm12 0h8V31h-8z' fill='%237dd3fc'/%3E%3Cpath d='M14 39l10-8 8 5 12-15 6 4' fill='none' stroke='%23f8fafc' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='50' cy='25' r='3' fill='%232fb0c6'/%3E%3C/svg%3E">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <style>
+:root{
+  --bg:#eef4f8;
+  --bg-soft:#f7fafc;
+  --surface:#ffffff;
+  --surface-soft:#f4f8fb;
+  --surface-muted:#edf3f8;
+  --border:#d8e1ea;
+  --border-strong:#c2cfdd;
+  --text:#142033;
+  --text-soft:#5d6b7d;
+  --text-muted:#7b8794;
+  --brand-900:#0f172a;
+  --brand-800:#16324f;
+  --brand-700:#185fa5;
+  --brand-600:#2176c7;
+  --brand-500:#2fb0c6;
+  --brand-400:#7dd3fc;
+  --success:#1d9e75;
+  --warning:#ba7517;
+  --danger:#c94848;
+  --danger-soft:#fef2f2;
+  --shadow:0 18px 48px rgba(15,23,42,0.08);
+  --shadow-soft:0 10px 24px rgba(15,23,42,0.05)
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:100vh}
-#app{max-width:900px;margin:0 auto;padding:20px 16px}
+html{background:var(--bg)}
+body{
+  font-family:"Aptos","Segoe UI","Helvetica Neue",sans-serif;
+  background:
+    radial-gradient(circle at top left,rgba(24,95,165,0.14),transparent 28%),
+    radial-gradient(circle at top right,rgba(47,176,198,0.12),transparent 24%),
+    linear-gradient(180deg,var(--bg-soft) 0%,var(--bg) 62%,#e7eef4 100%);
+  color:var(--text);
+  min-height:100vh
+}
+#app{max-width:1120px;margin:0 auto;padding:24px 16px 28px}
 input,select,textarea,button{font-family:inherit}
-input,select,textarea{background:#fff;color:#1a1a1a;border:1px solid #ddd;border-radius:8px;padding:7px 10px;font-size:13px;width:100%}
-input:focus,select:focus,textarea:focus{outline:none;border-color:#1a1a1a}
-input:disabled{background:#f5f5f3;cursor:not-allowed}
-button{cursor:pointer;font-size:13px;border-radius:8px;border:1px solid #ddd;background:transparent;color:#1a1a1a;padding:6px 12px;transition:background 0.15s}
-button:hover{background:#f0f0ee}
+input,select,textarea{
+  background:var(--surface);
+  color:var(--text);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:8px 11px;
+  font-size:13px;
+  width:100%
+}
+input:focus,select:focus,textarea:focus{
+  outline:none;
+  border-color:var(--brand-700);
+  box-shadow:0 0 0 3px rgba(24,95,165,0.12)
+}
+input:disabled{background:var(--surface-soft);cursor:not-allowed}
+button{
+  cursor:pointer;
+  font-size:13px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:transparent;
+  color:var(--text);
+  padding:7px 12px;
+  transition:background 0.15s,border-color 0.15s,transform 0.15s
+}
+button:hover{background:var(--surface-muted);border-color:var(--border-strong)}
 button:disabled{opacity:0.6;cursor:not-allowed}
-.card{background:#fff;border:1px solid #e8e8e6;border-radius:12px;padding:16px 20px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
-.mc{background:#f5f5f3;border-radius:8px;padding:12px 14px}
+.card{
+  background:rgba(255,255,255,0.92);
+  border:1px solid var(--border);
+  border-radius:18px;
+  padding:16px 20px;
+  margin-bottom:12px;
+  box-shadow:var(--shadow-soft);
+  backdrop-filter:blur(12px)
+}
+.mc{background:var(--surface-soft);border-radius:14px;padding:12px 14px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:20px}
-.btnp{background:#f5f5f3;font-weight:500}
-.btn-primary{background:#1a1a1a;color:#fff;border:none}
-.btn-primary:hover{background:#333}
-.btn-success{background:#1d9e75;color:#fff;border:none}
+.btnp{background:var(--surface-soft);font-weight:600}
+.btn-primary{background:linear-gradient(135deg,var(--brand-900) 0%,var(--brand-700) 100%);color:#fff;border:none;box-shadow:0 12px 28px rgba(24,95,165,0.22)}
+.btn-primary:hover{background:linear-gradient(135deg,var(--brand-800) 0%,var(--brand-700) 100%)}
+.btn-success{background:var(--success);color:#fff;border:none}
 .btn-success:hover{background:#178a65}
 .btn-danger{background:#e24b4a;color:#fff;border:none}
 .btn-danger:hover{background:#c94241}
 .row{display:flex;gap:10px;align-items:center}
 .tag{display:inline-block;padding:2px 7px;border-radius:6px;font-size:10px;font-weight:500}
-.ub{border:2px dashed #ccc;border-radius:12px;padding:24px;text-align:center;cursor:pointer;margin-bottom:10px}
+.ub{border:2px dashed var(--border-strong);border-radius:12px;padding:24px;text-align:center;cursor:pointer;margin-bottom:10px;background:rgba(255,255,255,0.75)}
 table{width:100%;border-collapse:collapse;font-size:12px}
-th{text-align:left;padding:7px 10px;border-bottom:1px solid #eee;color:#888;font-weight:400;font-size:11px;white-space:nowrap}
-td{padding:7px 10px;border-bottom:1px solid #f0f0ee;white-space:nowrap}
-.tabs{display:flex;gap:2px;margin-bottom:20px;border-bottom:1px solid #e8e8e6;overflow-x:auto}
-.tab-btn{padding:7px 11px;font-size:12px;cursor:pointer;border:none;background:none;color:#888;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;transition:color 0.15s}
-.tab-btn:hover{color:#555}
-.tab-btn.active{color:#1a1a1a;font-weight:500;border-bottom:2px solid #1a1a1a}
+th{text-align:left;padding:7px 10px;border-bottom:1px solid #e5edf4;color:var(--text-muted);font-weight:500;font-size:11px;white-space:nowrap}
+td{padding:7px 10px;border-bottom:1px solid #eef3f7;white-space:nowrap}
+.tabs{display:flex;gap:2px;margin-bottom:20px;border-bottom:1px solid var(--border);overflow-x:auto}
+.tab-btn{padding:8px 11px;font-size:12px;cursor:pointer;border:none;background:none;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;transition:color 0.15s}
+.tab-btn:hover{color:var(--text-soft)}
+.tab-btn.active{color:var(--brand-900);font-weight:600;border-bottom:2px solid var(--brand-700)}
 .badge{background:#e24b4a;color:#fff;border-radius:10px;padding:1px 5px;font-size:9px;margin-left:3px}
 .badge-amber{background:#ba7517}
+.text-link{color:var(--brand-700);text-decoration:none;font-weight:600}
+.auth-shell{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px 0}
+.auth-panel{width:100%;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(320px,410px);gap:20px;align-items:stretch}
+.auth-brand-panel{
+  background:
+    linear-gradient(140deg,rgba(255,255,255,0.96) 0%,rgba(236,245,251,0.92) 100%),
+    linear-gradient(135deg,rgba(24,95,165,0.06),rgba(47,176,198,0.08));
+  box-shadow:var(--shadow)
+}
+.auth-context-card{padding:16px;border-radius:16px;background:rgba(255,255,255,0.78);border:1px solid rgba(194,207,221,0.85)}
+.auth-card{padding:24px 24px 22px}
+.auth-form-header{display:flex;gap:12px;align-items:center;margin-bottom:18px}
+.auth-title{font-size:22px;font-weight:700;color:var(--brand-900);line-height:1.2}
+.auth-subtitle{font-size:13px;color:var(--text-soft);line-height:1.6}
+.brand-lockup{display:flex;flex-direction:column;gap:14px}
+.brand-row{display:flex;gap:14px;align-items:flex-start}
+.brand-logo{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex-shrink:0;
+  background:linear-gradient(145deg,var(--brand-900) 0%,var(--brand-700) 100%);
+  box-shadow:0 14px 30px rgba(24,95,165,0.22)
+}
+.brand-kicker{font-size:11px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:var(--brand-700);margin-bottom:6px}
+.brand-title{font-size:clamp(20px,2.2vw,30px);font-weight:700;line-height:1.2;color:var(--brand-900);max-width:620px}
+.brand-tagline{font-size:14px;line-height:1.6;color:var(--text-soft);margin-top:8px;max-width:620px}
+.brand-description{font-size:13px;line-height:1.7;color:var(--text-soft);max-width:680px}
+.brand-pill-row{display:flex;flex-wrap:wrap;gap:8px}
+.brand-pill{padding:7px 10px;border-radius:999px;background:rgba(24,95,165,0.08);border:1px solid rgba(24,95,165,0.12);font-size:11px;font-weight:600;color:var(--brand-800)}
+.brand-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.brand-metric{padding:14px 12px;border-radius:16px;background:rgba(255,255,255,0.78);border:1px solid rgba(194,207,221,0.85)}
+.brand-metric-value{font-size:16px;font-weight:700;line-height:1.2;margin-bottom:4px}
+.brand-metric-label{font-size:11px;color:var(--text-muted);line-height:1.5}
+.app-header-card{
+  padding:22px;
+  background:
+    radial-gradient(circle at right top,rgba(47,176,198,0.12),transparent 25%),
+    linear-gradient(135deg,rgba(255,255,255,0.96) 0%,rgba(241,247,251,0.96) 100%)
+}
+.app-header-grid{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap}
+.app-header-main{flex:1;min-width:280px}
+.app-header-meta{display:flex;flex-direction:column;align-items:flex-end;gap:10px;min-width:220px}
+.account-panel{padding:12px 14px;border-radius:16px;background:rgba(255,255,255,0.86);border:1px solid rgba(194,207,221,0.9);min-width:220px}
+.status-chip{display:inline-flex;align-items:center;gap:7px;padding:8px 10px;border-radius:999px;background:rgba(255,255,255,0.82);border:1px solid rgba(194,207,221,0.88);font-size:12px;color:var(--text-soft);margin-top:14px}
+.status-dot{width:8px;height:8px;border-radius:999px;display:inline-block}
+.page-note{font-size:12px;color:var(--text-soft);line-height:1.7}
+.footer-brand{font-size:12px;color:var(--text-soft);margin-top:16px;text-align:center;line-height:1.7}
+@media(max-width:860px){
+  #app{padding:18px 14px 24px}
+  .auth-panel{grid-template-columns:1fr}
+  .auth-card{padding:22px 18px 20px}
+  .brand-metrics{grid-template-columns:1fr}
+  .app-header-meta{align-items:flex-start;width:100%}
+}
 @media(max-width:480px){
   .row{flex-wrap:wrap}
   .grid{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:560px){
+  .auth-shell{padding:18px 0}
+  .brand-row{align-items:center}
+  .brand-title{font-size:22px}
 }
 </style>
 </head>
@@ -62,6 +184,30 @@ var AIAUTHK = "act_ai_auth_v1";
 var APIBASEK = "act_api_base_v1";
 var AUTHK = "act_auth_v1";
 var DEF = {campaigns:[],adsets:[],ads:[],notes:{},thresholds:{roas:{enabled:true,min:1.5,label:"ROAS min"},cpa:{enabled:false,max:150000,label:"CPA max"},ctr:{enabled:true,min:1,label:"CTR min %"},cpm:{enabled:false,max:60000,label:"CPM max"}}};
+var BRAND = {
+  shortName:"MATIQ",
+  expansion:"Meta Ads Tracking, Insights & Quality",
+  header:"MATIQ | Meta Ads Tracking, Insights & Quality",
+  tagline:"Track performance, uncover insights, and scale with quality.",
+  dashboardDescription:"MATIQ adalah internal dashboard untuk memantau, menganalisis, dan mengevaluasi performa Meta Ads secara terpusat. Dashboard ini membantu tim melihat metrik utama, menemukan insight yang relevan, dan menjaga kualitas keputusan saat melakukan scaling campaign."
+};
+var BRAND_ICON_SVG = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop offset='0%' stop-color='#0f172a'/><stop offset='100%' stop-color='#185fa5'/></linearGradient></defs><rect width='64' height='64' rx='16' fill='url(#g)'/><path d='M16 43h8V26h-8zm12 0h8V20h-8zm12 0h8V31h-8z' fill='#7dd3fc'/><path d='M14 39l10-8 8 5 12-15 6 4' fill='none' stroke='#f8fafc' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/><circle cx='50' cy='25' r='3' fill='#2fb0c6'/></svg>";
+var BRAND_FAVICON = "data:image/svg+xml;charset=UTF-8,"+encodeURIComponent(BRAND_ICON_SVG);
+
+function applyHeadBranding_(){
+  try{
+    var iconEl=document.querySelector("link[rel='icon']");
+    if(iconEl)iconEl.href=BRAND_FAVICON;
+    document.title=BRAND.header;
+  }catch(e){}
+}
+
+function brandPageTitle_(section){
+  var s=String(section||"").trim();
+  return s?s+" | "+BRAND.shortName:BRAND.header;
+}
+
+applyHeadBranding_();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTH HELPERS
@@ -481,6 +627,124 @@ function BarViz(props){
   );
 }
 
+function LineViz(props){
+  var values=(props.values||[]).map(function(v){return Number(v)||0;});
+  var labels=props.labels||[];
+  var color=props.color||"#185fa5";
+  var hgt=props.height||120;
+  if(values.length<2)return h("div",{style:{color:"#888",fontSize:12}},"Data belum cukup untuk trend.");
+  var w=420,pad=14;
+  var min=Math.min.apply(null,values);
+  var max=Math.max.apply(null,values);
+  var span=(max-min)||1;
+  var pts=values.map(function(v,i){
+    var x=pad+(i*(w-pad*2))/Math.max(1,values.length-1);
+    var y=pad+((max-v)*(hgt-pad*2))/span;
+    return {x:x,y:y,v:v,l:labels[i]||""};
+  });
+  var line=pts.map(function(p){return p.x+","+p.y;}).join(" ");
+  return h("div",null,
+    h("svg",{viewBox:"0 0 "+w+" "+hgt,style:{width:"100%",height:hgt}},
+      h("polyline",{fill:"none",stroke:"#e5e7eb",strokeWidth:"1",points:pad+","+(hgt-pad)+" "+(w-pad)+","+(hgt-pad)}),
+      h("polyline",{fill:"none",stroke:color,strokeWidth:"3",strokeLinejoin:"round",strokeLinecap:"round",points:line}),
+      pts.map(function(p,i){
+        return h("circle",{key:i,cx:p.x,cy:p.y,r:3,fill:color});
+      })
+    ),
+    h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:10,color:"#888",marginTop:4,gap:6,overflow:"hidden"}},
+      h("span",null,labels[0]||""),
+      h("span",null,labels[Math.floor((labels.length-1)/2)]||""),
+      h("span",null,labels[labels.length-1]||"")
+    )
+  );
+}
+
+function DonutViz(props){
+  var segments=(props.segments||[]).filter(function(s){return (Number(s.value)||0)>0;});
+  var total=segments.reduce(function(a,s){return a+(Number(s.value)||0);},0);
+  if(!total)return h("div",{style:{color:"#888",fontSize:12}},"Belum ada distribusi data.");
+  var r=44,c=2*Math.PI*r,start=0;
+  var arcs=[];
+  segments.forEach(function(s,idx){
+    var len=((Number(s.value)||0)/total)*c;
+    arcs.push(h("circle",{key:idx,cx:60,cy:60,r:r,fill:"none",stroke:s.color||"#185fa5",strokeWidth:14,strokeDasharray:len+" "+(c-len),strokeDashoffset:-start,transform:"rotate(-90 60 60)"}));
+    start+=len;
+  });
+  return h("div",{style:{display:"grid",gridTemplateColumns:"120px 1fr",gap:14,alignItems:"center"}},
+    h("div",{style:{position:"relative",width:120,height:120}},
+      h("svg",{viewBox:"0 0 120 120",style:{width:120,height:120}},
+        h("circle",{cx:60,cy:60,r:r,fill:"none",stroke:"#eef0f2",strokeWidth:14}),
+        arcs
+      ),
+      h("div",{style:{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#555",fontWeight:500}},fmtK(total))
+    ),
+    h("div",null,
+      segments.map(function(s,idx){
+        var pctVal=((Number(s.value)||0)/total)*100;
+        return h("div",{key:idx,className:"row",style:{justifyContent:"space-between",fontSize:12,marginBottom:6,gap:8}},
+          h("div",{className:"row",style:{gap:6}},
+            h("span",{style:{display:"inline-block",width:9,height:9,borderRadius:9,background:s.color||"#185fa5"}}),
+            h("span",{style:{color:"#555"}},s.label)
+          ),
+          h("span",{style:{fontWeight:500}},fmt(pctVal,1)+"%")
+        );
+      })
+    )
+  );
+}
+
+function BrandMark(props){
+  var size=props&&props.size||48;
+  return h("div",{className:"brand-logo",style:{width:size,height:size,borderRadius:Math.round(size*0.32)}},
+    h("svg",{viewBox:"0 0 64 64",style:{width:Math.round(size*0.72),height:Math.round(size*0.72)}},
+      h("rect",{x:5,y:5,width:54,height:54,rx:16,fill:"none",stroke:"rgba(255,255,255,0.16)",strokeWidth:"2"}),
+      h("path",{d:"M16 43h8V26h-8zm12 0h8V20h-8zm12 0h8V31h-8z",fill:"#7dd3fc"}),
+      h("path",{d:"M14 39l10-8 8 5 12-15 6 4",fill:"none",stroke:"#f8fafc",strokeWidth:"4",strokeLinecap:"round",strokeLinejoin:"round"}),
+      h("circle",{cx:50,cy:25,r:3,fill:"#2fb0c6"})
+    )
+  );
+}
+
+function BrandLockup(props){
+  return h("div",{className:"brand-lockup"},
+    h("div",{className:"brand-row"},
+      h(BrandMark,{size:props.logoSize||52}),
+      h("div",{style:{minWidth:0}},
+        h("div",{className:"brand-kicker"},props.kicker||"Internal Meta Ads Analytics Dashboard"),
+        h("div",{className:"brand-title"},BRAND.header),
+        h("div",{className:"brand-tagline"},BRAND.tagline)
+      )
+    ),
+    props.description&&h("div",{className:"brand-description"},props.description),
+    props.children
+  );
+}
+
+function AuthBrandPanel(props){
+  var items=props.items||[];
+  var metrics=props.metrics||[];
+  return h("div",{className:"card auth-brand-panel",style:{marginBottom:0,display:"flex",flexDirection:"column",gap:16}},
+    h(BrandLockup,{description:BRAND.dashboardDescription}),
+    h("div",{className:"auth-context-card"},
+      h("div",{style:{fontSize:15,fontWeight:700,color:"#0f172a",marginBottom:6}},props.title),
+      h("div",{className:"brand-description",style:{fontSize:13}},props.description)
+    ),
+    h("div",{className:"brand-pill-row"},
+      items.map(function(item){
+        return h("div",{key:item,className:"brand-pill"},item);
+      })
+    ),
+    h("div",{className:"brand-metrics"},
+      metrics.map(function(metric){
+        return h("div",{key:metric.label,className:"brand-metric"},
+          h("div",{className:"brand-metric-value",style:{color:metric.color||"#185fa5"}},metric.value),
+          h("div",{className:"brand-metric-label"},metric.label)
+        );
+      })
+    )
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTH COMPONENTS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -509,27 +773,43 @@ function LoginPage(props){
       .catch(function(err){setLoading(false);setError(err.message||"Terjadi kesalahan");});
   }
 
-  return h("div",{style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20}},
-    h("div",{className:"card",style:{maxWidth:380,width:"100%"}},
-      h("div",{style:{textAlign:"center",marginBottom:24}},
-        h("div",{style:{fontSize:20,fontWeight:600,marginBottom:4}},"Ad Campaign Tracker"),
-        h("div",{style:{fontSize:13,color:"#888"}},"Masuk ke akun Anda")
-      ),
-      h("form",{onSubmit:handleSubmit},
-        h("div",{style:{marginBottom:12}},
-          h("label",{style:{fontSize:12,color:"#555",display:"block",marginBottom:4}},"Email"),
-          h("input",{type:"email",value:email,onChange:function(e){setEmail(e.target.value);},placeholder:"email@example.com",required:true,disabled:loading})
+  return h("div",{className:"auth-shell"},
+    h("div",{className:"auth-panel"},
+      h(AuthBrandPanel,{
+        title:"Masuk ke workspace MATIQ",
+        description:"Akses dashboard internal untuk memantau performa Meta Ads, melihat insight prioritas, dan menjaga kualitas keputusan tim saat scaling campaign.",
+        items:["Performance visibility","Insight prioritization","Quality control"],
+        metrics:[
+          {value:"Track",label:"Pantau metrik utama secara terpusat",color:"#185fa5"},
+          {value:"Uncover",label:"Temukan insight yang relevan lebih cepat",color:"#1d9e75"},
+          {value:"Scale",label:"Jaga kualitas saat campaign bertumbuh",color:"#ba7517"}
+        ]
+      }),
+      h("div",{className:"card auth-card",style:{marginBottom:0}},
+        h("div",{className:"auth-form-header"},
+          h(BrandMark,{size:42}),
+          h("div",null,
+            h("div",{className:"brand-kicker",style:{marginBottom:4}},"Secure Team Access"),
+            h("div",{className:"auth-title"},"Login"),
+            h("div",{className:"auth-subtitle"},"Masuk untuk melanjutkan ke dashboard analytics MATIQ.")
+          )
         ),
-        h("div",{style:{marginBottom:12}},
-          h("label",{style:{fontSize:12,color:"#555",display:"block",marginBottom:4}},"Password"),
-          h("input",{type:"password",value:password,onChange:function(e){setPassword(e.target.value);},placeholder:"••••••••",required:true,disabled:loading})
+        h("form",{onSubmit:handleSubmit},
+          h("div",{style:{marginBottom:12}},
+            h("label",{style:{fontSize:12,color:"#4b5563",display:"block",marginBottom:4}},"Email"),
+            h("input",{type:"email",value:email,onChange:function(e){setEmail(e.target.value);},placeholder:"email@example.com",required:true,disabled:loading})
+          ),
+          h("div",{style:{marginBottom:12}},
+            h("label",{style:{fontSize:12,color:"#4b5563",display:"block",marginBottom:4}},"Password"),
+            h("input",{type:"password",value:password,onChange:function(e){setPassword(e.target.value);},placeholder:"••••••••",required:true,disabled:loading})
+          ),
+          error&&h("div",{style:{padding:"8px 12px",background:"var(--danger-soft)",border:"1px solid #fecaca",borderRadius:10,color:"#991b1b",fontSize:12,marginBottom:12}},error),
+          h("button",{type:"submit",className:"btn-primary",style:{width:"100%",padding:"11px",fontSize:14},disabled:loading},loading?"Memproses...":"Masuk ke MATIQ")
         ),
-        error&&h("div",{style:{padding:"8px 12px",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,color:"#991b1b",fontSize:12,marginBottom:12}},error),
-        h("button",{type:"submit",className:"btnp",style:{width:"100%",padding:"10px",fontSize:14,background:"#1a1a1a",color:"#fff",border:"none"},disabled:loading},loading?"Memproses...":"Masuk")
-      ),
-      h("div",{style:{textAlign:"center",marginTop:16,fontSize:13}},
-        h("span",{style:{color:"#888"}},"Belum punya akun? "),
-        h("a",{href:"#",style:{color:"#185fa5",textDecoration:"none"},onClick:function(e){e.preventDefault();onSwitch("register");}},"Daftar")
+        h("div",{style:{textAlign:"center",marginTop:18,fontSize:13}},
+          h("span",{style:{color:"var(--text-muted)"}},"Belum punya akun? "),
+          h("a",{href:"#",className:"text-link",onClick:function(e){e.preventDefault();onSwitch("register");}},"Daftar")
+        )
       )
     )
   );
@@ -578,41 +858,57 @@ function RegisterPage(props){
       .catch(function(err){setLoading(false);setError(err.message||"Terjadi kesalahan");});
   }
   
-  return h("div",{style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20}},
-    h("div",{className:"card",style:{maxWidth:400,width:"100%"}},
-      h("div",{style:{textAlign:"center",marginBottom:24}},
-        h("div",{style:{fontSize:20,fontWeight:600,marginBottom:4}},"Buat Akun Baru"),
-        h("div",{style:{fontSize:13,color:"#888"}},"Daftar untuk mulai menggunakan tracker")
-      ),
-      h("form",{onSubmit:handleSubmit},
-        h("div",{style:{marginBottom:12}},
-          h("label",{style:{fontSize:12,color:"#555",display:"block",marginBottom:4}},"Nama Lengkap"),
-          h("input",{type:"text",value:name,onChange:function(e){setName(e.target.value);},placeholder:"Nama Anda",required:true,disabled:loading})
-        ),
-        h("div",{style:{marginBottom:12}},
-          h("label",{style:{fontSize:12,color:"#555",display:"block",marginBottom:4}},"Email"),
-          h("input",{type:"email",value:email,onChange:function(e){setEmail(e.target.value);},placeholder:"email@example.com",required:true,disabled:loading})
-        ),
-        h("div",{style:{marginBottom:12}},
-          h("label",{style:{fontSize:12,color:"#555",display:"block",marginBottom:4}},"Password"),
-          h("input",{type:"password",value:password,onChange:function(e){setPassword(e.target.value);},placeholder:"Minimal 8 karakter",required:true,disabled:loading}),
-          password&&h("div",{style:{marginTop:6}},
-            h("div",{style:{display:"flex",gap:4,marginBottom:4}},
-              [1,2,3,4,5].map(function(i){return h("div",{key:i,style:{flex:1,height:4,borderRadius:2,background:i<=passStrength.score?passStrength.color:"#ddd"}});})
-            ),
-            h("div",{style:{fontSize:11,color:passStrength.color}},passStrength.text)
+  return h("div",{className:"auth-shell"},
+    h("div",{className:"auth-panel"},
+      h(AuthBrandPanel,{
+        title:"Daftarkan akses ke MATIQ",
+        description:"Buat akun untuk mulai memakai workspace internal yang konsisten untuk monitoring performa, eksplorasi insight, dan quality control campaign Meta Ads.",
+        items:["Internal dashboard","Analytics-ready","Professional workflow"],
+        metrics:[
+          {value:"Centralized",label:"Satu workspace untuk tim analitik dan media buyer",color:"#185fa5"},
+          {value:"Insight-led",label:"Analisis lebih cepat dengan konteks performa yang jelas",color:"#1d9e75"},
+          {value:"Credible",label:"Branding clean dan siap dipakai secara internal",color:"#ba7517"}
+        ]
+      }),
+      h("div",{className:"card auth-card",style:{marginBottom:0}},
+        h("div",{className:"auth-form-header"},
+          h(BrandMark,{size:42}),
+          h("div",null,
+            h("div",{className:"brand-kicker",style:{marginBottom:4}},"Workspace Enrollment"),
+            h("div",{className:"auth-title"},"Register"),
+            h("div",{className:"auth-subtitle"},"Buat akun baru tanpa mengubah flow autentikasi yang sudah ada.")
           )
         ),
-        h("div",{style:{marginBottom:12}},
-          h("label",{style:{fontSize:12,color:"#555",display:"block",marginBottom:4}},"Konfirmasi Password"),
-          h("input",{type:"password",value:confirmPass,onChange:function(e){setConfirmPass(e.target.value);},placeholder:"Ulangi password",required:true,disabled:loading})
+        h("form",{onSubmit:handleSubmit},
+          h("div",{style:{marginBottom:12}},
+            h("label",{style:{fontSize:12,color:"#4b5563",display:"block",marginBottom:4}},"Nama Lengkap"),
+            h("input",{type:"text",value:name,onChange:function(e){setName(e.target.value);},placeholder:"Nama Anda",required:true,disabled:loading})
+          ),
+          h("div",{style:{marginBottom:12}},
+            h("label",{style:{fontSize:12,color:"#4b5563",display:"block",marginBottom:4}},"Email"),
+            h("input",{type:"email",value:email,onChange:function(e){setEmail(e.target.value);},placeholder:"email@example.com",required:true,disabled:loading})
+          ),
+          h("div",{style:{marginBottom:12}},
+            h("label",{style:{fontSize:12,color:"#4b5563",display:"block",marginBottom:4}},"Password"),
+            h("input",{type:"password",value:password,onChange:function(e){setPassword(e.target.value);},placeholder:"Minimal 8 karakter",required:true,disabled:loading}),
+            password&&h("div",{style:{marginTop:6}},
+              h("div",{style:{display:"flex",gap:4,marginBottom:4}},
+                [1,2,3,4,5].map(function(i){return h("div",{key:i,style:{flex:1,height:4,borderRadius:2,background:i<=passStrength.score?passStrength.color:"#ddd"}});})
+              ),
+              h("div",{style:{fontSize:11,color:passStrength.color}},passStrength.text)
+            )
+          ),
+          h("div",{style:{marginBottom:12}},
+            h("label",{style:{fontSize:12,color:"#4b5563",display:"block",marginBottom:4}},"Konfirmasi Password"),
+            h("input",{type:"password",value:confirmPass,onChange:function(e){setConfirmPass(e.target.value);},placeholder:"Ulangi password",required:true,disabled:loading})
+          ),
+          error&&h("div",{style:{padding:"8px 12px",background:"var(--danger-soft)",border:"1px solid #fecaca",borderRadius:10,color:"#991b1b",fontSize:12,marginBottom:12}},error),
+          h("button",{type:"submit",className:"btn-primary",style:{width:"100%",padding:"11px",fontSize:14},disabled:loading},loading?"Memproses...":"Daftar ke MATIQ")
         ),
-        error&&h("div",{style:{padding:"8px 12px",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,color:"#991b1b",fontSize:12,marginBottom:12}},error),
-        h("button",{type:"submit",className:"btnp",style:{width:"100%",padding:"10px",fontSize:14,background:"#1a1a1a",color:"#fff",border:"none"},disabled:loading},loading?"Memproses...":"Daftar")
-      ),
-      h("div",{style:{textAlign:"center",marginTop:16,fontSize:13}},
-        h("span",{style:{color:"#888"}},"Sudah punya akun? "),
-        h("a",{href:"#",style:{color:"#185fa5",textDecoration:"none"},onClick:function(e){e.preventDefault();onSwitch("login");}},"Masuk")
+        h("div",{style:{textAlign:"center",marginTop:18,fontSize:13}},
+          h("span",{style:{color:"var(--text-muted)"}},"Sudah punya akun? "),
+          h("a",{href:"#",className:"text-link",onClick:function(e){e.preventDefault();onSwitch("login");}},"Masuk")
+        )
       )
     )
   );
@@ -991,6 +1287,13 @@ function App(){
     if((aiCfg.provider||"").toLowerCase()!=="openai")return;
     verifyProviderSession("openai");
   },[isLoggedIn,aiCfg.provider]);
+  useEffect(function(){
+    var title=BRAND.header;
+    if(authChecking)title=brandPageTitle_("Loading");
+    else if(!isLoggedIn)title=brandPageTitle_(authPage==="register"?"Register":"Login");
+    else title=brandPageTitle_(tab||"Dashboard");
+    try{document.title=title;}catch(e){}
+  },[authChecking,isLoggedIn,authPage,tab]);
   function upd(fn){setData(function(prev){var next=fn(prev);sd(next);return next;});}
 
   function setProviderAuthState(provider,state,error){
@@ -1152,15 +1455,20 @@ function App(){
   
   var canAccessProtected=userAccess==="admin"||userAccess==="full";
   var isAdminUser=userAccess==="admin";
+  var canAccessDummyData=isAdminUser;
   
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER AUTH SCREENS
   // ─────────────────────────────────────────────────────────────────────────
   if(authChecking){
-    return h("div",{style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}},
-      h("div",{style:{textAlign:"center"}},
-        h("div",{style:{fontSize:16,marginBottom:8}},"Memuat..."),
-        h("div",{style:{fontSize:12,color:"#888"}},"Memeriksa sesi login")
+    return h("div",{className:"auth-shell"},
+      h("div",{className:"card",style:{maxWidth:520,width:"100%",marginBottom:0,textAlign:"center",padding:"28px 24px"}},
+        h("div",{style:{display:"flex",justifyContent:"center",marginBottom:14}},
+          h(BrandMark,{size:54})
+        ),
+        h("div",{style:{fontSize:18,fontWeight:700,color:"#0f172a",marginBottom:6}},BRAND.header),
+        h("div",{style:{fontSize:13,color:"#5d6b7d",lineHeight:1.7,marginBottom:14}},BRAND.tagline),
+        h("div",{style:{fontSize:13,color:"#5d6b7d"}},"Memeriksa sesi login dan menyiapkan workspace analytics Anda.")
       )
     );
   }
@@ -1262,6 +1570,18 @@ function App(){
     });
   }
 
+  function handleResetDummyData(){
+    if(!canAccessDummyData){
+      setLiveMsg("Akses ditolak: Data Dummy hanya untuk admin.");
+      return;
+    }
+    if(confirm("Hapus semua data?")){
+      setData(DEF);
+      sd(DEF);
+      setLiveMsg("Data Dummy direset.");
+    }
+  }
+
   var topLevel=data.campaigns.length?data.campaigns:data.adsets.length?data.adsets:data.ads;
 
   // Filter out items with zero spend/impressions (inactive ads)
@@ -1299,6 +1619,29 @@ function App(){
     var m=calcM(c);
     return{name:c.name.length>14?c.name.slice(0,14)+"...":c.name,fullName:c.name,spend:m.spend,revenue:Number(c.revenue)||0,roas:m.roas?parseFloat(m.roas.toFixed(2)):0,ctr:m.ctr?parseFloat(m.ctr.toFixed(2)):0,cpa:Math.round(m.cpa||0),cpm:Math.round(m.cpm||0),impressions:Number(c.impressions)||0,results:Number(c.results)||0};
   }).sort(function(a,b){return b.spend-a.spend;});
+  var topTrend=chartData.slice(0,6);
+  var trendLabels=topTrend.map(function(d){return d.name;});
+  var roasTrend=topTrend.map(function(d){return Number(d.roas)||0;});
+  var trendStart=roasTrend.length?roasTrend[0]:0;
+  var trendEnd=roasTrend.length?roasTrend[roasTrend.length-1]:0;
+  var roasDeltaPct=trendStart?pct(trendEnd,trendStart):null;
+  var spendShareSegments=(function(){
+    var base=chartData.slice(0,4).map(function(d,i){
+      var colors=["#185fa5","#1d9e75","#ba7517","#534ab7"];
+      return {label:d.fullName||d.name,value:Number(d.spend)||0,color:colors[i%colors.length]};
+    });
+    var rest=chartData.slice(4).reduce(function(a,d){return a+(Number(d.spend)||0);},0);
+    if(rest>0)base.push({label:"Lainnya",value:rest,color:"#9ca3af"});
+    return base;
+  })();
+  var levelSegments=[
+    {label:"Campaign",value:activeCampaigns.length,color:"#534ab7"},
+    {label:"Ad Set",value:activeAdsets.length,color:"#185fa5"},
+    {label:"Ad",value:activeAds.length,color:"#1d9e75"}
+  ];
+  var efficiencyLabel=overallRoas===null?"-":overallRoas>=2?"Sehat":overallRoas>=1?"Perlu optimasi":"Perlu tindakan";
+  var efficiencyColor=overallRoas===null?"#888":overallRoas>=2?"#0f6e56":overallRoas>=1?"#854f0b":"#993c1d";
+  var liveIndicatorColor=liveState==="live"?"#1d9e75":liveState==="syncing"?"#185fa5":"#c94848";
 
   var metricOpts=[{key:"roas",label:"ROAS",color:"#1d9e75"},{key:"ctr",label:"CTR%",color:"#185fa5"},{key:"cpa",label:"CPA",color:"#ba7517"},{key:"spend",label:"Spend",color:"#534ab7"},{key:"cpm",label:"CPM",color:"#e24b4a"}];
   var selM=metricOpts.find(function(m){return m.key===analyticsMetric;})||metricOpts[0];
@@ -1362,23 +1705,30 @@ function App(){
   });
 
   return h("div",null,
-    // Header with user info
-    h("div",{className:"row",style:{justifyContent:"space-between",marginBottom:16}},
-      h("div",null,
-        h("div",{style:{fontSize:16,fontWeight:500}},"Ad Campaign Tracker"),
-        h("div",{style:{fontSize:12,color:"#888"}},"v1.0 - Meta Ads Analyzer"),
-        h("div",{style:{fontSize:11,color:liveState==="live"?"#0f6e56":liveState==="syncing"?"#185fa5":"#993c1d"}},liveMsg||"")
-      ),
-      h("div",{className:"row",style:{gap:8}},
-        currentUser&&h("div",{style:{textAlign:"right"}},
-          h("div",{style:{fontSize:12,fontWeight:500}},currentUser.name||currentUser.email),
-          h("div",{className:"row",style:{justifyContent:"flex-end",gap:4,marginTop:2}},
-            h("span",{className:"tag",style:{background:currentUser.role==="admin"?"#dbeafe":"#f3f4f6",color:currentUser.role==="admin"?"#1e40af":"#374151",fontSize:9}},currentUser.role),
-            h("span",{className:"tag",style:{background:currentUser.payment_status==="LUNAS"?"#dcfce7":"#fef3c7",color:currentUser.payment_status==="LUNAS"?"#166534":"#92400e",fontSize:9}},currentUser.payment_status||"NONE")
+    h("div",{className:"card app-header-card"},
+      h("div",{className:"app-header-grid"},
+        h("div",{className:"app-header-main"},
+          h(BrandLockup,{logoSize:50,description:BRAND.dashboardDescription}),
+          h("div",{className:"status-chip"},
+            h("span",{className:"status-dot",style:{background:liveIndicatorColor,boxShadow:"0 0 0 4px rgba(24,95,165,0.08)"}}),
+            h("span",null,liveMsg||"Workspace MATIQ siap digunakan.")
           )
         ),
-        isAdminUser&&h("button",{className:"btnp",onClick:function(){setTab("Import");}},"Import"),
-        h("button",{style:{padding:"4px 10px",fontSize:11},onClick:handleLogout},"Logout")
+        h("div",{className:"app-header-meta"},
+          currentUser&&h("div",{className:"account-panel",style:{textAlign:"right"}},
+            h("div",{style:{fontSize:11,color:"#7b8794",letterSpacing:"0.12em",textTransform:"uppercase",fontWeight:700,marginBottom:6}},"Active Session"),
+            h("div",{style:{fontSize:13,fontWeight:700,color:"#0f172a"}},currentUser.name||currentUser.email),
+            h("div",{className:"page-note",style:{marginTop:4}},currentUser.email||""),
+            h("div",{className:"row",style:{justifyContent:"flex-end",gap:4,marginTop:8}},
+              h("span",{className:"tag",style:{background:currentUser.role==="admin"?"#dbeafe":"#f3f4f6",color:currentUser.role==="admin"?"#1e40af":"#374151",fontSize:9}},currentUser.role),
+              h("span",{className:"tag",style:{background:currentUser.payment_status==="LUNAS"?"#dcfce7":"#fef3c7",color:currentUser.payment_status==="LUNAS"?"#166534":"#92400e",fontSize:9}},currentUser.payment_status||"NONE")
+            )
+          ),
+          h("div",{className:"row",style:{gap:8,flexWrap:"wrap",justifyContent:"flex-end"}},
+            isAdminUser&&h("button",{className:"btnp",onClick:function(){setTab("Import");}},"Import"),
+            h("button",{style:{padding:"6px 12px",fontSize:11},onClick:handleLogout},"Logout")
+          )
+        )
       )
     ),
     h("div",{className:"tabs"},tabEls.filter(function(el){
@@ -1391,15 +1741,52 @@ function App(){
 
     // DASHBOARD
     tab==="Dashboard"&&h("div",null,
-      h("div",{className:"grid"},
-        [["Spend",fmtRp(totalSpend)],["Revenue",fmtRp(totalRevenue)],["ROAS",overallRoas?fmt(overallRoas)+"x":"-"],["Campaigns",data.campaigns.length],["Ad Sets",data.adsets.length],["Ads",data.ads.length],["Urgent",urgentCount,urgentCount>0?"#993c1d":null],["Alerts",alertCount,alertCount>0?"#854f0b":null]].map(function(item){
-          return h("div",{key:item[0],className:"mc"},h("div",{style:{fontSize:11,color:"#888",marginBottom:4}},item[0]),h("div",{style:{fontSize:18,fontWeight:500,color:item[2]||"#1a1a1a"}},item[1]));
-        })
+      h("div",{className:"card",style:{background:"linear-gradient(135deg,#ffffff 0%,#f7fafc 100%)"}},
+        h("div",{className:"row",style:{justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,flexWrap:"wrap",gap:8}},
+          h("div",null,
+            h("div",{style:{fontSize:14,fontWeight:600,marginBottom:3}},"Snapshot Performa"),
+            h("div",{style:{fontSize:12,color:"#6b7280"}},"Ringkasan cepat untuk membaca kondisi akun iklan saat ini")
+          ),
+          h("span",{className:"tag",style:{background:"#f3f4f6",color:efficiencyColor,fontSize:11,padding:"4px 8px"}},"Status: "+efficiencyLabel)
+        ),
+        h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}},
+          [["Spend",fmtRp(totalSpend),"#374151"],["Revenue",fmtRp(totalRevenue),"#0f6e56"],["ROAS",overallRoas?fmt(overallRoas)+"x":"-",overallRoas>=2?"#0f6e56":overallRoas>=1?"#854f0b":"#993c1d"],["Urgent",urgentCount,urgentCount>0?"#993c1d":"#374151"],["Alerts",alertCount,alertCount>0?"#854f0b":"#374151"],["Campaign Aktif",activeCampaigns.length,"#185fa5"]].map(function(item){
+            return h("div",{key:item[0],className:"mc",style:{background:"#fff",border:"1px solid #edf0f3"}},
+              h("div",{style:{fontSize:11,color:"#6b7280",marginBottom:4}},item[0]),
+              h("div",{style:{fontSize:18,fontWeight:600,color:item[2]||"#1a1a1a"}},item[1])
+            );
+          })
+        )
       ),
-      topLevel.length>0&&h("div",{className:"card"},
-        h("div",{style:{fontSize:13,fontWeight:500,marginBottom:12}},"ROAS per Campaign"),
-        h(BarViz,{data:chartData,dataKey:"roas",color:"#1d9e75"})
+
+      topLevel.length>0&&h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12,marginBottom:12}},
+        h("div",{className:"card",style:{marginBottom:0}},
+          h("div",{style:{fontSize:13,fontWeight:600,marginBottom:4}},"Trend ROAS Top Campaign"),
+          h("div",{style:{fontSize:11,color:"#888",marginBottom:8}},"Urut berdasarkan spend terbesar"),
+          h(LineViz,{values:roasTrend,labels:trendLabels,color:"#1d9e75",height:120}),
+          roasDeltaPct!==null&&h("div",{style:{fontSize:11,color:roasDeltaPct>=0?"#0f6e56":"#993c1d",marginTop:8,fontWeight:500}},
+            (roasDeltaPct>=0?"+":"")+fmt(roasDeltaPct,1)+"% vs campaign terbesar"
+          )
+        ),
+        h("div",{className:"card",style:{marginBottom:0}},
+          h("div",{style:{fontSize:13,fontWeight:600,marginBottom:4}},"Komposisi Spend Campaign"),
+          h("div",{style:{fontSize:11,color:"#888",marginBottom:8}},"Distribusi budget pada campaign aktif"),
+          h(DonutViz,{segments:spendShareSegments})
+        )
       ),
+
+      topLevel.length>0&&h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12,marginBottom:12}},
+        h("div",{className:"card",style:{marginBottom:0}},
+          h("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"ROAS per Campaign"),
+          h(BarViz,{data:chartData,dataKey:"roas",color:"#1d9e75"})
+        ),
+        h("div",{className:"card",style:{marginBottom:0}},
+          h("div",{style:{fontSize:13,fontWeight:600,marginBottom:4}},"Distribusi Entitas Aktif"),
+          h("div",{style:{fontSize:11,color:"#888",marginBottom:8}},"Proporsi jumlah Campaign, Ad Set, dan Ad aktif"),
+          h(DonutViz,{segments:levelSegments})
+        )
+      ),
+
       !hasData&&h("div",{style:{color:"#888",fontSize:13,padding:"16px 0"}},"Belum ada data. Klik Import untuk upload CSV dari Meta Ads."),
       urgentCount>0&&h("div",{className:"card",style:{borderLeft:"3px solid #e24b4a",cursor:"pointer"},onClick:function(){setTab("Rekomendasi");}},
         h("div",{style:{fontWeight:500,color:"#993c1d"}},"Butuh aksi segera: "+urgentCount+" item"),
@@ -1747,11 +2134,14 @@ function App(){
           h("span",{style:{fontSize:12,color:"#0f6e56"}},"Tersimpan lokal")
         )
       ),
-      h("div",{className:"card"},
-        h("div",{style:{fontWeight:500,marginBottom:8}},"Reset Data"),
-        h("button",{style:{color:"#993c1d"},onClick:function(){if(confirm("Hapus semua data?")){setData(DEF);sd(DEF);}}},"Reset Semua Data")
+      canAccessDummyData&&h("div",{className:"card"},
+        h("div",{style:{fontWeight:500,marginBottom:8}},"Reset Data Dummy"),
+        h("button",{style:{color:"#993c1d"},onClick:handleResetDummyData},"Reset Semua Data Dummy")
       ),
-      h("div",{style:{fontSize:12,color:"#888",marginTop:16,textAlign:"center"}},"Ad Campaign Tracker v1.0")
+      h("div",{className:"footer-brand"},
+        h("div",null,BRAND.header),
+        h("div",null,BRAND.tagline)
+      )
     ),
     
     // ADMIN PANEL (Admin only)
