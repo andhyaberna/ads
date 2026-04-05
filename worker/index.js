@@ -210,8 +210,8 @@ async function handleProtectedAction(request, env, corsHeaders, action) {
 }
 
 async function callGasAuthAction_(action, payload, env) {
-  const url = String(env.GAS_WEB_APP_URL || '').trim();
-  if (!url) {
+  const urls = resolveGasUrls_(env);
+  if (!urls.length) {
     return { ok: false, status: 500, error: 'Gateway not configured' };
   }
 
@@ -219,23 +219,27 @@ async function callGasAuthAction_(action, payload, env) {
     action
   }), env);
 
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(requestBody)
-    });
-    const rawText = await res.text();
-    let data = {};
+  for (let i = 0; i < urls.length; i++) {
     try {
-      data = rawText ? JSON.parse(rawText) : {};
+      const res = await fetch(urls[i], {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+      const rawText = await res.text();
+      let data = {};
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch (err) {
+        data = { ok: false, error: 'Invalid upstream JSON' };
+      }
+      return { ok: true, status: res.status, data };
     } catch (err) {
-      data = { ok: false, error: 'Invalid upstream JSON' };
+      // try next fallback URL
     }
-    return { ok: true, status: res.status, data };
-  } catch (err) {
-    return { ok: false, status: 502, error: 'Upstream unavailable' };
   }
+
+  return { ok: false, status: 502, error: 'Upstream unavailable' };
 }
 
 function isAllowedOrigin(request, env) {
@@ -435,9 +439,9 @@ async function handleAppAi(request, env, corsHeaders) {
 }
 
 async function callGasAction_(action, payload, env) {
-  const url = String(env.GAS_WEB_APP_URL || '').trim();
+  const urls = resolveGasUrls_(env);
   const token = String(env.INTERNAL_API_TOKEN || '').trim();
-  if (!url) {
+  if (!urls.length) {
     return { ok: false, status: 500, error: 'Gateway not configured' };
   }
 
@@ -446,23 +450,27 @@ async function callGasAction_(action, payload, env) {
   }), env);
   if (token) requestBody.internal_token = token;
 
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(requestBody)
-    });
-    const rawText = await res.text();
-    let data = {};
+  for (let i = 0; i < urls.length; i++) {
     try {
-      data = rawText ? JSON.parse(rawText) : {};
+      const res = await fetch(urls[i], {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+      const rawText = await res.text();
+      let data = {};
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch (err) {
+        data = { ok: false, error: 'Invalid upstream JSON' };
+      }
+      return { ok: true, status: res.status, data };
     } catch (err) {
-      data = { ok: false, error: 'Invalid upstream JSON' };
+      // try next fallback URL
     }
-    return { ok: true, status: res.status, data };
-  } catch (err) {
-    return { ok: false, status: 502, error: 'Upstream unavailable' };
   }
+
+  return { ok: false, status: 502, error: 'Upstream unavailable' };
 }
 
 function withGatewaySheetId_(payload, env) {
@@ -472,6 +480,30 @@ function withGatewaySheetId_(payload, env) {
     body.db_target_sheet_id = sheetId;
   }
   return body;
+}
+
+function resolveGasUrls_(env) {
+  const defaults = [
+    'https://script.google.com/macros/s/AKfycbyEQM12lmuZ_Q7NrBC_OVEHXDHN49oLEe52GLuMbFbSiH3HSzz6PK1S7DULwnfuTp4U/exec'
+  ];
+
+  const raw = String(env.GAS_WEB_APP_URL || '').trim();
+  let primary = '';
+
+  if (raw) {
+    if (/^https?:\/\//i.test(raw)) {
+      primary = raw;
+    } else if (/^AKfy[a-zA-Z0-9_-]+$/.test(raw)) {
+      primary = `https://script.google.com/macros/s/${raw}/exec`;
+    }
+  }
+
+  const list = [];
+  if (primary) list.push(primary);
+  for (let i = 0; i < defaults.length; i++) {
+    if (list.indexOf(defaults[i]) < 0) list.push(defaults[i]);
+  }
+  return list;
 }
 
 function normalizeGasResponseObj_(upstream, reqId) {
