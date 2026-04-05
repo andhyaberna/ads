@@ -1,6 +1,8 @@
 var DB_NAME = 'Ad Campaign Tracker DB';
 var DB_TARGET_SHEET_ID = '1hbhtYLqzSIRlZoIiB0my-05tSIXdgAOjPbgpf7dJIEs';
 var DB_TARGET_SHEET_ID_OVERRIDE_ = '';
+var DB_READY_IN_PROGRESS_ = false;
+var DB_READY_DONE_ = false;
 
 var SHEETS = {
   campaigns: ['id','import_batch_id','period_label','campaign_name','spend','impressions','ctr','results','revenue','roas','cpm','reach','freq','atc','cpa','date_start','date_end','created_at'],
@@ -15,22 +17,35 @@ var SHEETS = {
 };
 
 function ensureDbReady() {
+  if (DB_READY_DONE_) {
+    return getOrCreateSpreadsheet_();
+  }
+  if (DB_READY_IN_PROGRESS_) {
+    return getOrCreateSpreadsheet_();
+  }
+
+  DB_READY_IN_PROGRESS_ = true;
   var ss = getOrCreateSpreadsheet_();
-  Object.keys(SHEETS).forEach(function (name) {
-    var sh = ss.getSheetByName(name) || ss.insertSheet(name);
-    var headers = SHEETS[name];
-    if (sh.getLastRow() === 0) {
-      sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-    } else {
-      var existing = sh.getRange(1, 1, 1, headers.length).getValues()[0];
-      if (existing.join('|') !== headers.join('|')) {
-        sh.clear();
+  try {
+    Object.keys(SHEETS).forEach(function (name) {
+      var sh = ss.getSheetByName(name) || ss.insertSheet(name);
+      var headers = SHEETS[name];
+      if (sh.getLastRow() === 0) {
         sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+      } else {
+        var existing = sh.getRange(1, 1, 1, headers.length).getValues()[0];
+        if (existing.join('|') !== headers.join('|')) {
+          sh.clear();
+          sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+        }
       }
-    }
-  });
-  seedDefaultThresholds_();
-  return ss;
+    });
+    seedDefaultThresholds_();
+    DB_READY_DONE_ = true;
+    return ss;
+  } finally {
+    DB_READY_IN_PROGRESS_ = false;
+  }
 }
 
 function getOrCreateSpreadsheet_() {
@@ -59,6 +74,7 @@ function setDbTargetSheetIdOverride_(sheetId) {
   var clean = String(sheetId || '').trim();
   if (!clean) return;
   DB_TARGET_SHEET_ID_OVERRIDE_ = clean;
+  DB_READY_DONE_ = false;
 }
 
 function getSheetRows_(sheetName) {
@@ -138,30 +154,40 @@ function createUser_(userData) {
 }
 
 function updateUser_(userId, updates) {
-  var users = getSheetRows_('users');
-  var found = false;
   var now = new Date().toISOString();
-  
-  users = users.map(function (u) {
-    if (String(u.id) === String(userId)) {
-      found = true;
-      Object.keys(updates).forEach(function (key) {
-        if (key !== 'id' && key !== 'created_at') {
-          u[key] = updates[key];
-        }
-      });
-      u.updated_at = now;
-    }
-    return u;
-  });
-  
-  if (!found) return null;
-  
+
   var ss = ensureDbReady();
   var sh = ss.getSheetByName('users');
-  if (sh.getLastRow() > 1) sh.deleteRows(2, sh.getLastRow() - 1);
-  appendRows_('users', users);
-  return getUserById_(userId);
+  if (!sh || sh.getLastRow() < 2) return null;
+
+  var headers = SHEETS.users;
+  var idCol = headers.indexOf('id') + 1;
+  if (idCol < 1) return null;
+
+  var ids = sh.getRange(2, idCol, sh.getLastRow() - 1, 1).getValues();
+  var rowIndex = -1;
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) === String(userId)) {
+      rowIndex = i + 2;
+      break;
+    }
+  }
+  if (rowIndex < 2) return null;
+
+  var currentRow = sh.getRange(rowIndex, 1, 1, headers.length).getValues()[0];
+  var user = {};
+  headers.forEach(function (h, idx) { user[h] = currentRow[idx]; });
+
+  Object.keys(updates || {}).forEach(function (key) {
+    if (key !== 'id' && key !== 'created_at' && headers.indexOf(key) >= 0) {
+      user[key] = updates[key];
+    }
+  });
+  user.updated_at = now;
+
+  var out = headers.map(function (h) { return user[h] !== undefined ? user[h] : ''; });
+  sh.getRange(rowIndex, 1, 1, headers.length).setValues([out]);
+  return user;
 }
 
 function deleteUser_(userId) {

@@ -225,11 +225,16 @@ async function callGasAuthAction_(action, payload, env) {
   }), env);
 
   for (let i = 0; i < urls.length; i++) {
+    let timer = null;
     try {
+      const timeoutMs = Number(env.GAS_FETCH_TIMEOUT_MS || 25000);
+      const ctrl = new AbortController();
+      timer = setTimeout(() => ctrl.abort('upstream-timeout'), timeoutMs);
       const res = await fetch(urls[i], {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
+        signal: ctrl.signal
       });
       const rawText = await res.text();
       let data = {};
@@ -241,6 +246,8 @@ async function callGasAuthAction_(action, payload, env) {
       return { ok: true, status: res.status, data };
     } catch (err) {
       // try next fallback URL
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -456,11 +463,16 @@ async function callGasAction_(action, payload, env) {
   if (token) requestBody.internal_token = token;
 
   for (let i = 0; i < urls.length; i++) {
+    let timer = null;
     try {
+      const timeoutMs = Number(env.GAS_FETCH_TIMEOUT_MS || 25000);
+      const ctrl = new AbortController();
+      timer = setTimeout(() => ctrl.abort('upstream-timeout'), timeoutMs);
       const res = await fetch(urls[i], {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
+        signal: ctrl.signal
       });
       const rawText = await res.text();
       let data = {};
@@ -472,6 +484,8 @@ async function callGasAction_(action, payload, env) {
       return { ok: true, status: res.status, data };
     } catch (err) {
       // try next fallback URL
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
