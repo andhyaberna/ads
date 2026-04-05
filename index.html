@@ -59,6 +59,8 @@ var SK = "act_v5";
 var AKCFG = "act_ai_cfg_v2";
 var APIBASEK = "act_api_base_v1";
 var AUTHK = "act_auth_v1";
+var DEFAULT_EDGE_API_BASE = "https://api.ads.cepat.top";
+var GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyEQM12lmuZ_Q7NrBC_OVEHXDHN49oLEe52GLuMbFbSiH3HSzz6PK1S7DULwnfuTp4U/exec";
 var DEF = {campaigns:[],adsets:[],ads:[],notes:{},thresholds:{roas:{enabled:true,min:1.5,label:"ROAS min"},cpa:{enabled:false,max:150000,label:"CPA max"},ctr:{enabled:true,min:1,label:"CTR min %"},cpm:{enabled:false,max:60000,label:"CPM max"}}};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,20 +105,72 @@ function getUserAccessLevel(){
   }catch(e){return "none";}
 }
 
+function authActionFromPath_(path){
+  var p=String(path||"");
+  if(p==="/auth/register")return "register";
+  if(p==="/auth/login")return "login";
+  if(p==="/auth/verify")return "verify_token";
+  if(p==="/auth/logout")return "logout";
+  if(p==="/auth/create-first-admin")return "create_first_admin";
+  return "";
+}
+function isAuthPath_(path){return /^\/auth\//.test(String(path||""));}
+function parseJsonResponse_(res){
+  return res.text().then(function(t){
+    var j={};
+    try{j=t?JSON.parse(t):{};}catch(e){j={ok:false,error:"Invalid server response"};}
+    if(!res.ok&&!j.error)j.error="Request failed (HTTP "+res.status+")";
+    j.__httpStatus=res.status;
+    return j;
+  });
+}
+function callAuthViaGas_(path,payload,token){
+  var action=authActionFromPath_(path);
+  if(!action)return Promise.resolve({ok:false,error:"Aksi auth tidak dikenali"});
+  var body=Object.assign({},payload||{},{action:action});
+  if(token&&!body.auth_token)body.auth_token=token;
+  var gasEndpoint=GAS_WEB_APP_URL+(GAS_WEB_APP_URL.indexOf("?")>=0?"&":"?")+"action="+encodeURIComponent(action);
+  return fetch(gasEndpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+    .then(parseJsonResponse_)
+    .then(function(j){
+      if(j&&j.__httpStatus===405&&!j.error)j.error="GAS Web App belum terdeploy versi terbaru";
+      if(j&&String(j.error||"").indexOf("INTERNAL_API_TOKEN not configured")>=0){
+        j.error="GAS belum sinkron versi auth terbaru. Deploy ulang file Code.gs + Api.gs + Auth.gs sebagai Web App.";
+      }
+      return j;
+    });
+}
+
 // Auth API calls
 function authReq(path,payload){
   var opts={method:"POST",headers:{"Content-Type":"application/json"}};
   if(payload)opts.body=JSON.stringify(payload);
   var token=getAuthToken();
   if(token)opts.headers["Authorization"]="Bearer "+token;
-  return fetch(apiPath(path),opts).then(function(res){
-    return res.text().then(function(t){
-      var j={};
-      try{j=t?JSON.parse(t):{};}catch(e){j={ok:false,error:"Invalid server response"};}
-      if(!res.ok&&!j.error)j.error="Request failed (HTTP "+res.status+")";
-      return j;
+
+  var host=(location.hostname||"").toLowerCase();
+  var authRoute=isAuthPath_(path);
+  var useGasFirst=authRoute&&!HAS_EXPLICIT_APIBASE&&host==="ads.cepat.top";
+  if(useGasFirst){
+    return callAuthViaGas_(path,payload,token);
+  }
+
+  return fetch(apiPath(path),opts)
+    .then(parseJsonResponse_)
+    .then(function(j){
+      var status=Number(j&&j.__httpStatus||0);
+      var shouldFallback=authRoute&&(!j.ok)&&(status===404||status===0||/Invalid server response/i.test(String(j.error||"")));
+      if(!shouldFallback)return j;
+      return callAuthViaGas_(path,payload,token).then(function(gasRes){
+        return gasRes&&gasRes.ok?gasRes:j;
+      }).catch(function(){return j;});
+    })
+    .catch(function(err){
+      if(!authRoute)return {ok:false,error:err&&err.message?err.message:"Request gagal"};
+      return callAuthViaGas_(path,payload,token).catch(function(){
+        return {ok:false,error:err&&err.message?err.message:"Auth request gagal"};
+      });
     });
-  });
 }
 
 function ld(){try{var d=JSON.parse(localStorage.getItem(SK))||DEF;return Object.assign({},DEF,d,{thresholds:Object.assign({},DEF.thresholds,d.thresholds||{})});}catch(e){return DEF;}}
