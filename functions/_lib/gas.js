@@ -17,14 +17,39 @@ async function readJson(request) {
   }
 }
 
-export async function proxyAuthAction(context, action) {
+function readQuery(request) {
+  const url = new URL(request.url);
+  const payload = {};
+  for (const [key, value] of url.searchParams.entries()) {
+    payload[key] = value;
+  }
+  return payload;
+}
+
+function inferErrorStatus(message, fallbackStatus = 400) {
+  const msg = String(message || '').toLowerCase();
+  if (!msg) return fallbackStatus;
+  if (msg.includes('unauthorized') || msg.includes('login diperlukan') || msg.includes('token')) {
+    return 401;
+  }
+  if (msg.includes('forbidden') || msg.includes('hanya admin') || msg.includes('akses ditolak')) {
+    return 403;
+  }
+  if (msg.includes('not found') || msg.includes('tidak ditemukan')) {
+    return 404;
+  }
+  return fallbackStatus;
+}
+
+async function proxyGasAction(context, action, options = {}) {
   const { request, env } = context;
   const gasUrl = String(env.GAS_WEB_APP_URL || '').trim();
   if (!gasUrl) {
     return json({ ok: false, error: 'GAS_WEB_APP_URL is not configured' }, 500);
   }
 
-  const payload = await readJson(request);
+  const method = String(request.method || 'POST').toUpperCase();
+  const payload = method === 'GET' ? readQuery(request) : await readJson(request);
   const body = {
     ...payload,
     action,
@@ -37,6 +62,17 @@ export async function proxyAuthAction(context, action) {
   const authHeader = request.headers.get('authorization') || '';
   const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
   if (bearer && !body.auth_token) body.auth_token = bearer;
+
+  if (options.requireAuth && !body.auth_token) {
+    return json({ ok: false, error: 'Unauthorized: Login diperlukan' }, 401);
+  }
+
+  if (options.includeInternalToken !== false) {
+    const internalToken = String(env.INTERNAL_API_TOKEN || '').trim();
+    if (internalToken && !body.internal_token) {
+      body.internal_token = internalToken;
+    }
+  }
 
   try {
     const response = await fetch(gasUrl, {
@@ -60,11 +96,29 @@ export async function proxyAuthAction(context, action) {
       );
     }
 
+    if (parsed && parsed.ok === false) {
+      const status = response.ok
+        ? inferErrorStatus(parsed.error, 400)
+        : (response.status || inferErrorStatus(parsed.error, 502));
+      return json(parsed, status);
+    }
+
     const status = response.ok ? 200 : response.status || 500;
     return json(parsed, status);
   } catch (err) {
     return json({ ok: false, error: err.message || 'Failed to reach GAS endpoint' }, 502);
   }
+}
+
+export async function proxyAuthAction(context, action) {
+  return proxyGasAction(context, action, { includeInternalToken: false });
+}
+
+export async function proxyProtectedAction(context, action) {
+  return proxyGasAction(context, action, {
+    includeInternalToken: true,
+    requireAuth: true,
+  });
 }
 
 export function optionsResponse() {

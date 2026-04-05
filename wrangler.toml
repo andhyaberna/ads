@@ -5,6 +5,8 @@ workers_dev = true
 
 routes = [
   { pattern = "ads.cepat.top/auth/*", zone_name = "cepat.top" },
+  { pattern = "ads.cepat.top/user/*", zone_name = "cepat.top" },
+  { pattern = "ads.cepat.top/admin/*", zone_name = "cepat.top" },
   { pattern = "ads.cepat.top/app/*", zone_name = "cepat.top" },
   { pattern = "ads.cepat.top/health*", zone_name = "cepat.top" }
 ]

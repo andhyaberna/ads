@@ -190,6 +190,7 @@ Campaign contoh:
 
 - Domain `https://ads.cepat.top/` menampilkan frontend publik (tanpa ekspos URL GAS di UI).
 - Frontend hanya akses endpoint Worker publik (`/app/snapshot`, `/app/import`, `/app/save-note`, `/app/ai`).
+- Endpoint auth dan akun yang juga harus diroute ke backend: `/auth/*`, `/user/*`, `/admin/*`.
 - Worker menyuntik `internal_token` server-side saat relay ke GAS (browser tidak pernah memegang token internal).
 - Data flow live: **Excel/CSV -> Worker /app/import -> GAS import -> Google Sheets target ID -> Worker /app/snapshot -> UI ads.cepat.top**.
 - Jika endpoint/GSheets gagal diakses, Worker kirim error aman ber-ID request (tanpa detail sensitif).

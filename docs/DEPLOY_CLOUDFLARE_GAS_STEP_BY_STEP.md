@@ -17,6 +17,8 @@ Kalau Anda mau setup paling sederhana:
 1. Frontend tetap di `https://ads.cepat.top`
 2. Worker dipasang di route yang sama domain, minimal:
    - `ads.cepat.top/auth/*`
+   - `ads.cepat.top/user/*`
+   - `ads.cepat.top/admin/*`
    - `ads.cepat.top/app/*`
 3. Set **1 secret wajib** di Worker:
    - `GAS_WEB_APP_URL`
@@ -38,6 +40,7 @@ Repo ini sekarang menyediakan **Cloudflare Pages Functions** di folder:
 
 Jika project Anda terhubung Git -> Cloudflare Pages, cukup push ke branch produksi.
 Pages akan deploy route `/auth/*` dan `/health` otomatis dari folder `functions/`.
+Untuk login admin, profile user, dan manajemen user, route `/user/*` dan `/admin/*` juga harus ikut tersedia dari folder `functions/`.
 
 ---
 
@@ -109,6 +112,8 @@ wrangler deploy
 Pilihan A (direkomendasikan untuk mode simple): route di domain yang sama
 
 - `ads.cepat.top/auth/*` -> Worker `ads`
+- `ads.cepat.top/user/*` -> Worker `ads`
+- `ads.cepat.top/admin/*` -> Worker `ads`
 - `ads.cepat.top/app/*` -> Worker `ads`
 
 Pilihan B (domain API terpisah):
