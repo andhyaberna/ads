@@ -1,6 +1,13 @@
 name = "ads"
 main = "index.js"
 compatibility_date = "2026-04-04"
+workers_dev = true
+
+routes = [
+  { pattern = "ads.cepat.top/auth/*", zone_name = "cepat.top" },
+  { pattern = "ads.cepat.top/app/*", zone_name = "cepat.top" },
+  { pattern = "ads.cepat.top/health*", zone_name = "cepat.top" }
+]
 
 [vars]
 ALLOWED_ORIGIN = "https://ads.cepat.top"
