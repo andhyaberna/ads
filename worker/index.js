@@ -21,6 +21,22 @@ export default {
       return json(diag, diag.ok ? 200 : 502, corsHeaders);
     }
 
+    if (path === '/oauth/openai/start' && request.method === 'GET') {
+      return startOpenAiOAuth(request, env);
+    }
+
+    if (path === '/oauth/openai/callback' && request.method === 'GET') {
+      return finishOpenAiOAuth(request, env);
+    }
+
+    if (path === '/oauth/openai/status' && request.method === 'GET') {
+      return getOpenAiOAuthStatus(request, env, corsHeaders);
+    }
+
+    if (path === '/oauth/openai/logout' && request.method === 'POST') {
+      return logoutOpenAiOAuth(env, corsHeaders);
+    }
+
     if ((path === '/' || path === '/index.html') && request.method === 'GET') {
       return serveFrontend_(env, corsHeaders);
     }
@@ -145,7 +161,7 @@ export default {
       const rawBody = await request.text();
       const auth = await verifyInternalRequest(request, env, rawBody);
       if (!auth.ok) return json({ ok: false, error: auth.error }, 401, corsHeaders);
-      return proxyAi(rawBody, env);
+      return proxyAi(rawBody, env, request);
     }
 
     if (path === '/webhook/meta' && request.method === 'POST') {
@@ -444,7 +460,7 @@ async function handleAppAi(request, env, corsHeaders) {
   }
   const summary = buildCompactSummary_(snapResponse.data?.data || snapResponse.data || {});
 
-  const aiResponse = await proxyAi(JSON.stringify({ question, provider, summary }), env);
+  const aiResponse = await proxyAi(JSON.stringify({ question, provider, summary }), env, request);
   const text = await aiResponse.text();
   let parsed = {};
   try {
@@ -663,7 +679,411 @@ function requestId_() {
   }
 }
 
-async function proxyAi(rawBody, env) {
+function parseCookies_(request) {
+  const raw = request && request.headers ? (request.headers.get('cookie') || '') : '';
+  const out = {};
+  raw.split(';').forEach((part) => {
+    const idx = part.indexOf('=');
+    if (idx < 0) return;
+    const k = part.slice(0, idx).trim();
+    if (!k) return;
+    const v = part.slice(idx + 1).trim();
+    out[k] = decodeURIComponent(v || '');
+  });
+  return out;
+}
+
+function cookieAttr_(maxAgeSec, path) {
+  const attrs = [
+    `Path=${path || '/'}`,
+    'HttpOnly',
+    'Secure',
+    'SameSite=Lax'
+  ];
+  if (Number.isFinite(maxAgeSec)) attrs.push(`Max-Age=${Math.max(0, Math.floor(maxAgeSec))}`);
+  return attrs.join('; ');
+}
+
+function cookieSet_(name, value, maxAgeSec, path) {
+  return `${name}=${encodeURIComponent(String(value || ''))}; ${cookieAttr_(maxAgeSec, path)}`;
+}
+
+function cookieClear_(name, path) {
+  return `${name}=; ${cookieAttr_(0, path)}`;
+}
+
+function getOpenAiRedirectUri_(request, env) {
+  const explicit = String(env.OPENAI_OAUTH_REDIRECT_URI || '').trim();
+  if (explicit) return explicit;
+  const url = new URL(request.url);
+  return `${url.origin}/oauth/openai/callback`;
+}
+
+function getOpenAiAuthorizeUrl_(env) {
+  return String(env.OPENAI_OAUTH_AUTHORIZE_URL || 'https://auth.openai.com/oauth/authorize').trim();
+}
+
+function getOpenAiTokenUrl_(env) {
+  return String(env.OPENAI_OAUTH_TOKEN_URL || 'https://auth.openai.com/oauth/token').trim();
+}
+
+function getOpenAiScope_(env) {
+  return String(env.OPENAI_OAUTH_SCOPES || 'openid profile offline_access').trim();
+}
+
+function getOpenAiClientId_(env) {
+  return String(env.OPENAI_OAUTH_CLIENT_ID || '').trim();
+}
+
+function getOpenAiClientSecret_(env) {
+  return String(env.OPENAI_OAUTH_CLIENT_SECRET || '').trim();
+}
+
+function openAiOauthErrorRedirect_(returnTo, errorCode, errorMsg) {
+  const target = safeReturnPath_(returnTo);
+  const qs = new URLSearchParams({
+    oauth_provider: 'openai',
+    oauth_status: String(errorCode || 'error'),
+    oauth_error: String(errorMsg || 'OAuth gagal').slice(0, 180)
+  });
+  return `${target}${target.indexOf('?') >= 0 ? '&' : '?'}${qs.toString()}`;
+}
+
+function safeReturnPath_(returnTo) {
+  const raw = String(returnTo || '').trim();
+  if (!raw || raw.charAt(0) !== '/') return '/';
+  if (/^\/\//.test(raw)) return '/';
+  return raw.slice(0, 300);
+}
+
+function randomB64Url_(bytes = 32) {
+  const buf = new Uint8Array(bytes);
+  crypto.getRandomValues(buf);
+  return toBase64Url(buf);
+}
+
+function decodeBase64UrlToString_(value) {
+  const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+  const pad = normalized.length % 4;
+  const input = normalized + (pad ? '='.repeat(4 - pad) : '');
+  return atob(input);
+}
+
+async function startOpenAiOAuth(request, env) {
+  const clientId = getOpenAiClientId_(env);
+  const redirectUri = getOpenAiRedirectUri_(request, env);
+  const authorizeUrl = getOpenAiAuthorizeUrl_(env);
+  const scope = getOpenAiScope_(env);
+  if (!clientId || !redirectUri || !authorizeUrl) {
+    return json({ ok: false, error: 'OpenAI OAuth config belum lengkap' }, 500, {
+      'access-control-allow-origin': env.ALLOWED_ORIGIN || 'https://ads.cepat.top'
+    });
+  }
+
+  const reqUrl = new URL(request.url);
+  const state = randomB64Url_(24);
+  const verifier = randomB64Url_(48);
+  const challenge = await sha256ToBase64Url_(verifier);
+  const returnTo = safeReturnPath_(reqUrl.searchParams.get('return_to') || '/');
+  const statePayload = {
+    state,
+    verifier,
+    return_to: returnTo,
+    ts: Date.now()
+  };
+  const stateToken = await signStatePayload_(statePayload, env);
+
+  const oauthParams = new URLSearchParams({
+    response_type: 'code',
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    scope,
+    state,
+    code_challenge: challenge,
+    code_challenge_method: 'S256'
+  });
+
+  const headers = new Headers({
+    location: `${authorizeUrl}?${oauthParams.toString()}`,
+    'cache-control': 'no-store'
+  });
+  headers.append('set-cookie', cookieSet_('oa_openai_state', stateToken, 600, '/oauth/openai'));
+  return new Response(null, { status: 302, headers });
+}
+
+async function finishOpenAiOAuth(request, env) {
+  const url = new URL(request.url);
+  const code = String(url.searchParams.get('code') || '');
+  const state = String(url.searchParams.get('state') || '');
+  const providerError = String(url.searchParams.get('error') || '');
+  const providerErrorDesc = String(url.searchParams.get('error_description') || '');
+  const cookies = parseCookies_(request);
+  const stateToken = cookies.oa_openai_state || '';
+  const parsedState = await verifyStatePayload_(stateToken, env);
+  const returnTo = safeReturnPath_(parsedState && parsedState.return_to ? parsedState.return_to : '/');
+
+  const headers = new Headers({ 'cache-control': 'no-store' });
+  headers.append('set-cookie', cookieClear_('oa_openai_state', '/oauth/openai'));
+
+  if (!parsedState || !state || parsedState.state !== state) {
+    headers.set('location', openAiOauthErrorRedirect_(returnTo, 'state_mismatch', 'State OAuth tidak valid')); 
+    return new Response(null, { status: 302, headers });
+  }
+
+  if (providerError) {
+    headers.set('location', openAiOauthErrorRedirect_(returnTo, 'provider_error', providerErrorDesc || providerError));
+    return new Response(null, { status: 302, headers });
+  }
+
+  if (!code) {
+    headers.set('location', openAiOauthErrorRedirect_(returnTo, 'missing_code', 'Authorization code tidak ada'));
+    return new Response(null, { status: 302, headers });
+  }
+
+  const tokenRes = await exchangeOpenAiCode_(code, parsedState.verifier, getOpenAiRedirectUri_(request, env), env);
+  if (!tokenRes.ok) {
+    headers.set('location', openAiOauthErrorRedirect_(returnTo, 'token_exchange_failed', tokenRes.error || 'Token exchange gagal'));
+    return new Response(null, { status: 302, headers });
+  }
+
+  const sessionCookie = await sealOpenAiSession_(tokenRes.session, env);
+  if (!sessionCookie) {
+    headers.set('location', openAiOauthErrorRedirect_(returnTo, 'session_store_failed', 'Session OAuth tidak dapat disimpan'));
+    return new Response(null, { status: 302, headers });
+  }
+
+  headers.append('set-cookie', cookieSet_('oa_openai_session', sessionCookie, Number(tokenRes.session.max_age_sec || 3600), '/'));
+  headers.set('location', `${returnTo}${returnTo.indexOf('?') >= 0 ? '&' : '?'}oauth_provider=openai&oauth_status=success`);
+  return new Response(null, { status: 302, headers });
+}
+
+async function getOpenAiOAuthStatus(request, env, corsHeaders) {
+  const refreshed = await getValidOpenAiSession(request, env);
+  const headers = new Headers(corsHeaders || {});
+  headers.set('content-type', 'application/json; charset=utf-8');
+  if (refreshed && refreshed.set_cookie) headers.append('set-cookie', refreshed.set_cookie);
+  if (refreshed && refreshed.clear_cookie) headers.append('set-cookie', refreshed.clear_cookie);
+  if (!refreshed || !refreshed.access_token) {
+    return new Response(JSON.stringify({ ok: true, connected: false, provider: 'openai' }), { status: 200, headers });
+  }
+  return new Response(JSON.stringify({
+    ok: true,
+    connected: true,
+    provider: 'openai',
+    expires_at: refreshed.expires_at || ''
+  }), { status: 200, headers });
+}
+
+function logoutOpenAiOAuth(env, corsHeaders) {
+  const headers = new Headers(corsHeaders || {});
+  headers.set('content-type', 'application/json; charset=utf-8');
+  headers.append('set-cookie', cookieClear_('oa_openai_session', '/'));
+  return new Response(JSON.stringify({ ok: true, provider: 'openai', logged_out: true }), { status: 200, headers });
+}
+
+async function exchangeOpenAiCode_(code, verifier, redirectUri, env) {
+  const tokenUrl = getOpenAiTokenUrl_(env);
+  const clientId = getOpenAiClientId_(env);
+  const clientSecret = getOpenAiClientSecret_(env);
+  if (!tokenUrl || !clientId || !clientSecret || !redirectUri || !code) {
+    return { ok: false, error: 'OpenAI OAuth token config tidak lengkap' };
+  }
+  try {
+    const body = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: redirectUri,
+      client_id: clientId,
+      client_secret: clientSecret,
+      code_verifier: verifier || ''
+    });
+    const res = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    });
+    const raw = await res.text();
+    let parsed = {};
+    try { parsed = raw ? JSON.parse(raw) : {}; } catch (_) { parsed = {}; }
+    if (!res.ok || !parsed.access_token) {
+      return { ok: false, error: String(parsed.error_description || parsed.error || `HTTP ${res.status}`) };
+    }
+    const nowMs = Date.now();
+    const expSec = Number(parsed.expires_in || 3600);
+    const expiresAtMs = nowMs + Math.max(60, expSec) * 1000;
+    return {
+      ok: true,
+      session: {
+        provider: 'openai',
+        access_token: String(parsed.access_token || ''),
+        refresh_token: String(parsed.refresh_token || ''),
+        token_type: String(parsed.token_type || 'Bearer'),
+        scope: String(parsed.scope || ''),
+        expires_at: new Date(expiresAtMs).toISOString(),
+        max_age_sec: Math.max(60, expSec)
+      }
+    };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message ? err.message : err) };
+  }
+}
+
+async function refreshOpenAiToken_(session, env) {
+  const refreshToken = String(session && session.refresh_token ? session.refresh_token : '');
+  if (!refreshToken) return { ok: false, error: 'no refresh token' };
+  const tokenUrl = getOpenAiTokenUrl_(env);
+  const clientId = getOpenAiClientId_(env);
+  const clientSecret = getOpenAiClientSecret_(env);
+  if (!tokenUrl || !clientId || !clientSecret) {
+    return { ok: false, error: 'OpenAI OAuth token config tidak lengkap' };
+  }
+  try {
+    const body = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret
+    });
+    const res = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    });
+    const raw = await res.text();
+    let parsed = {};
+    try { parsed = raw ? JSON.parse(raw) : {}; } catch (_) { parsed = {}; }
+    if (!res.ok || !parsed.access_token) {
+      return { ok: false, error: String(parsed.error_description || parsed.error || `HTTP ${res.status}`) };
+    }
+    const expSec = Number(parsed.expires_in || 3600);
+    const expiresAtMs = Date.now() + Math.max(60, expSec) * 1000;
+    return {
+      ok: true,
+      session: {
+        provider: 'openai',
+        access_token: String(parsed.access_token || ''),
+        refresh_token: String(parsed.refresh_token || refreshToken),
+        token_type: String(parsed.token_type || session.token_type || 'Bearer'),
+        scope: String(parsed.scope || session.scope || ''),
+        expires_at: new Date(expiresAtMs).toISOString(),
+        max_age_sec: Math.max(60, expSec)
+      }
+    };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message ? err.message : err) };
+  }
+}
+
+function isSessionExpired_(session) {
+  const exp = Date.parse(String(session && session.expires_at ? session.expires_at : ''));
+  if (!Number.isFinite(exp)) return true;
+  return Date.now() > (exp - 30 * 1000);
+}
+
+async function getValidOpenAiSession(request, env) {
+  if (!request) return null;
+  const cookies = parseCookies_(request);
+  const enc = cookies.oa_openai_session || '';
+  if (!enc) return null;
+  const session = await unsealOpenAiSession_(enc, env);
+  if (!session || !session.access_token) {
+    return { clear_cookie: cookieClear_('oa_openai_session', '/') };
+  }
+  if (!isSessionExpired_(session)) return session;
+  const refreshed = await refreshOpenAiToken_(session, env);
+  if (!refreshed.ok || !refreshed.session) {
+    return { clear_cookie: cookieClear_('oa_openai_session', '/') };
+  }
+  const sealed = await sealOpenAiSession_(refreshed.session, env);
+  if (!sealed) return refreshed.session;
+  return Object.assign({}, refreshed.session, {
+    set_cookie: cookieSet_('oa_openai_session', sealed, Number(refreshed.session.max_age_sec || 3600), '/')
+  });
+}
+
+async function signStatePayload_(payload, env) {
+  const secret = resolveOpenAiCookieSecret_(env);
+  if (!secret) return '';
+  const raw = JSON.stringify(payload || {});
+  const encoded = toBase64Url(new TextEncoder().encode(raw));
+  const sig = await hmacSha256Base64Url(secret, encoded);
+  return `${encoded}.${sig}`;
+}
+
+async function verifyStatePayload_(token, env) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 2) return null;
+  const [encoded, sig] = parts;
+  const secret = resolveOpenAiCookieSecret_(env);
+  if (!secret) return null;
+  const expected = await hmacSha256Base64Url(secret, encoded);
+  if (!constantTimeEqual(expected, sig)) return null;
+  try {
+    const raw = decodeBase64UrlToString_(encoded);
+    const parsed = JSON.parse(raw || '{}');
+    const ts = Number(parsed.ts || 0);
+    if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > 10 * 60 * 1000) return null;
+    return parsed;
+  } catch (err) {
+    return null;
+  }
+}
+
+function resolveOpenAiCookieSecret_(env) {
+  return String(
+    env.OPENAI_OAUTH_SESSION_SECRET
+    || env.SIGNING_SECRET
+    || env.INTERNAL_TOKEN
+    || env.INTERNAL_API_TOKEN
+    || ''
+  ).trim();
+}
+
+async function aesKeyFromSecret_(secret) {
+  const enc = new TextEncoder().encode(String(secret || ''));
+  const digest = await crypto.subtle.digest('SHA-256', enc);
+  return crypto.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+
+async function sealOpenAiSession_(session, env) {
+  const secret = resolveOpenAiCookieSecret_(env);
+  if (!secret) return '';
+  const key = await aesKeyFromSecret_(secret);
+  const iv = new Uint8Array(12);
+  crypto.getRandomValues(iv);
+  const clear = new TextEncoder().encode(JSON.stringify(session || {}));
+  const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, clear);
+  const payload = `${toBase64Url(iv)}.${toBase64Url(new Uint8Array(cipher))}`;
+  return payload;
+}
+
+async function unsealOpenAiSession_(sealed, env) {
+  const secret = resolveOpenAiCookieSecret_(env);
+  if (!secret) return null;
+  const parts = String(sealed || '').split('.');
+  if (parts.length !== 2) return null;
+  try {
+    const ivRaw = decodeBase64UrlToString_(parts[0]);
+    const dataRaw = decodeBase64UrlToString_(parts[1]);
+    const iv = new Uint8Array(ivRaw.length);
+    for (let i = 0; i < ivRaw.length; i++) iv[i] = ivRaw.charCodeAt(i);
+    const data = new Uint8Array(dataRaw.length);
+    for (let i = 0; i < dataRaw.length; i++) data[i] = dataRaw.charCodeAt(i);
+    const key = await aesKeyFromSecret_(secret);
+    const clear = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
+    const text = new TextDecoder().decode(clear);
+    return JSON.parse(text || '{}');
+  } catch (err) {
+    return null;
+  }
+}
+
+async function sha256ToBase64Url_(input) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(input || '')));
+  return toBase64Url(new Uint8Array(buf));
+}
+
+async function proxyAi(rawBody, env, request) {
   let body = {};
   try {
     body = JSON.parse(rawBody || '{}');
@@ -703,15 +1123,28 @@ async function proxyAi(rawBody, env) {
     }
   }
 
-  const resolvedApiKey = userApiKey || (
-    provider === 'gemini'
-      ? (env.GEMINI_API_KEY || '')
-      : provider === 'claude'
-        ? (env.CLAUDE_API_KEY || '')
-        : (env.OPENAI_API_KEY || '')
-  );
+  const allowLegacyOpenAiUserKey = String(env.OPENAI_ALLOW_LEGACY_USER_KEY || '').toLowerCase() === 'true';
+  const oauthOpenAi = provider === 'openai' ? await getValidOpenAiSession(request, env) : null;
+  const resolvedApiKey = provider === 'openai'
+    ? (
+      (oauthOpenAi && oauthOpenAi.access_token ? oauthOpenAi.access_token : '')
+      || (allowLegacyOpenAiUserKey ? userApiKey : '')
+      || (env.OPENAI_API_KEY || '')
+    )
+    : (
+      userApiKey || (
+        provider === 'gemini'
+          ? (env.GEMINI_API_KEY || '')
+          : provider === 'claude'
+            ? (env.CLAUDE_API_KEY || '')
+            : (env.OPENAI_API_KEY || '')
+      )
+    );
   if (!resolvedApiKey) {
-    return json({ ok: true, answer: `API key ${provider.toUpperCase()} belum tersedia untuk request ini.` }, 200, {
+    const miss = provider === 'openai'
+      ? 'OpenAI belum terhubung. Login OpenAI OAuth di Settings lalu validasi session.'
+      : `API key ${provider.toUpperCase()} belum tersedia untuk request ini.`;
+    return json({ ok: true, answer: miss }, 200, {
       'access-control-allow-origin': env.ALLOWED_ORIGIN || 'https://ads.cepat.top'
     });
   }

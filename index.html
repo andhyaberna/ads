@@ -240,6 +240,30 @@ function providerLoginUrl_(provider){
   return "";
 }
 
+function readOauthResultFromUrl_(){
+  try{
+    var u=new URL(location.href);
+    var provider=String(u.searchParams.get("oauth_provider")||"").toLowerCase();
+    var status=String(u.searchParams.get("oauth_status")||"").toLowerCase();
+    var err=String(u.searchParams.get("oauth_error")||"");
+    if(!provider&&!status&&!err)return null;
+    u.searchParams.delete("oauth_provider");
+    u.searchParams.delete("oauth_status");
+    u.searchParams.delete("oauth_error");
+    var next=u.pathname+(u.search||"")+(u.hash||"");
+    history.replaceState({},document.title,next||"/");
+    return {provider:provider,status:status,error:err};
+  }catch(e){
+    return null;
+  }
+}
+
+function openAiOauthStartPath_(){
+  var ret="/";
+  try{ret=(location.pathname||"/")+(location.search||"")+(location.hash||"");}catch(e){}
+  return "/oauth/openai/start?return_to="+encodeURIComponent(ret||"/");
+}
+
 function aiAuthMeta_(state){
   var s=String(state||"disconnected").toLowerCase();
   if(s==="connected")return {label:"Connected",bg:"#dcfce7",color:"#166534"};
@@ -948,6 +972,25 @@ function App(){
   useEffect(function(){saicfg(aiCfg);},[aiCfg]);
   useEffect(function(){saveAiAuth(aiAuth);},[aiAuth]);
   useEffect(function(){if(isLoggedIn)loadLiveSnapshot(true);},[isLoggedIn]);
+  useEffect(function(){
+    var oauthResult=readOauthResultFromUrl_();
+    if(!oauthResult||oauthResult.provider!=="openai")return;
+    if(oauthResult.status==="success"){
+      setProviderAuthState("openai","checking","");
+      setLiveMsg("OpenAI OAuth berhasil. Memvalidasi session...");
+      verifyProviderSession("openai");
+      return;
+    }
+    var msg=oauthResult.error||"Login OpenAI dibatalkan atau gagal.";
+    setProviderAuthState("openai","error",msg);
+    setLiveMsg("OpenAI OAuth gagal: "+msg);
+  },[]);
+
+  useEffect(function(){
+    if(!isLoggedIn)return;
+    if((aiCfg.provider||"").toLowerCase()!=="openai")return;
+    verifyProviderSession("openai");
+  },[isLoggedIn,aiCfg.provider]);
   function upd(fn){setData(function(prev){var next=fn(prev);sd(next);return next;});}
 
   function setProviderAuthState(provider,state,error){
@@ -962,6 +1005,12 @@ function App(){
 
   function connectProviderBrowser(provider){
     var p=String(provider||"").toLowerCase();
+    if(p==="openai"){
+      setProviderAuthState("openai","checking","");
+      setLiveMsg("Mengalihkan ke OpenAI OAuth...");
+      location.href=apiPath(openAiOauthStartPath_());
+      return;
+    }
     var url=providerLoginUrl_(p);
     if(!url){setLiveMsg("Provider belum valid untuk browser login.");return;}
     try{window.open(url,"_blank","noopener,noreferrer");}catch(e){}
@@ -977,6 +1026,28 @@ function App(){
       setLiveMsg("Session aplikasi berakhir. Login ulang lalu validasi ulang provider.");
       return Promise.resolve(false);
     }
+    if(p==="openai"){
+      setProviderAuthState("openai","checking","");
+      setLiveMsg("Memeriksa session OpenAI OAuth...");
+      return req("/oauth/openai/status","GET")
+        .then(function(json){
+          if(json&&json.connected){
+            setProviderAuthState("openai","connected","");
+            setLiveMsg("OpenAI OAuth terhubung.");
+            return true;
+          }
+          setProviderAuthState("openai","disconnected","OpenAI belum terhubung. Klik Login Browser.");
+          setLiveMsg("OpenAI belum terhubung.");
+          return false;
+        })
+        .catch(function(err){
+          var msg=sanitizePublicError(err&&err.message?err.message:"Validasi gagal");
+          setProviderAuthState("openai","error",msg||"Validasi OpenAI OAuth gagal.");
+          setLiveMsg("Validasi OpenAI OAuth gagal.");
+          return false;
+        });
+    }
+
     setProviderAuthState(p,"checking","");
     setLiveMsg("Validasi session "+p+"...");
     return req("/app/ai","POST",{question:"Balas satu kata: aktif.",provider:p,model:String(aiCfg.model||"").trim()})
@@ -1007,6 +1078,23 @@ function App(){
         setLiveMsg("Validasi session gagal. Coba lagi.");
         return false;
       });
+  }
+
+  function disconnectProviderSession(provider){
+    var p=String(provider||"").toLowerCase();
+    if(!p||p==="builtin")return;
+    if(p==="openai"){
+      req("/oauth/openai/logout","POST",{})
+        .then(function(){
+          setProviderAuthState("openai","disconnected","");
+          setLiveMsg("OpenAI OAuth diputus.");
+        })
+        .catch(function(){
+          setProviderAuthState("openai","disconnected","");
+        });
+      return;
+    }
+    setProviderAuthState(p,"disconnected","");
   }
 
   function req(path,method,payload){
@@ -1224,7 +1312,7 @@ function App(){
     setAiLoading(true);setAiResult("");
     var provider=(aiCfg.provider||"builtin").toLowerCase();
     var providerAuth=getAiProviderAuthState_(aiAuth,provider);
-    var useLegacyKey=!!aiCfg.useLegacyKey;
+    var useLegacyKey=provider==="openai"?false:!!aiCfg.useLegacyKey;
     var userApiKey=String(aiCfg.apiKey||"").trim();
     var model=String(aiCfg.model||"").trim();
     var localFallback=function(msg){
@@ -1616,7 +1704,7 @@ function App(){
         h("div",{style:{fontWeight:500,marginBottom:4}},"AI Provider (Browser Session)"),
         h("div",{style:{fontSize:12,color:"#888",marginBottom:12}},"Default memakai browser/session login + secure relay. API key manual dipertahankan hanya sebagai mode transisi."),
         h("div",{style:{marginBottom:10}},
-          h("select",{value:aiCfg.provider||"builtin",onChange:function(e){var v=e.target.value;setAiCfg(function(c){return Object.assign({},c,{provider:v});});}},
+          h("select",{value:aiCfg.provider||"builtin",onChange:function(e){var v=e.target.value;setAiCfg(function(c){var base=Object.assign({},c,{provider:v});if(v==="openai")base.useLegacyKey=false;return base;});}},
             h("option",{value:"builtin"},"Builtin (tanpa API key)"),
             h("option",{value:"openai"},"OpenAI"),
             h("option",{value:"gemini"},"Gemini"),
@@ -1632,18 +1720,19 @@ function App(){
             h("div",{className:"row",style:{gap:6}},
               h("button",{className:"btnp",onClick:function(){connectProviderBrowser(activeProvider);}},"Login Browser"),
               h("button",{className:"btnp",onClick:function(){verifyProviderSession(activeProvider);}},"Validasi Session"),
-              h("button",{onClick:function(){setProviderAuthState(activeProvider,"disconnected","");}},"Putuskan")
+              h("button",{onClick:function(){disconnectProviderSession(activeProvider);}},"Putuskan")
             )
           ),
           activeProviderAuth.error&&h("div",{style:{fontSize:12,color:"#993c1d",marginBottom:10}},activeProviderAuth.error),
           h("div",{style:{marginBottom:10}},
             h("input",{type:"text",placeholder:"Model (opsional, contoh: gpt-4o-mini / gemini-1.5-flash)",value:aiCfg.model||"",onChange:function(e){var v=e.target.value;setAiCfg(function(c){return Object.assign({},c,{model:v});});}})
           ),
-          h("label",{className:"row",style:{marginBottom:8,fontSize:12,color:"#555",gap:6}},
+          activeProvider!=="openai"&&h("label",{className:"row",style:{marginBottom:8,fontSize:12,color:"#555",gap:6}},
             h("input",{type:"checkbox",style:{width:14,height:14},checked:!!aiCfg.useLegacyKey,onChange:function(e){var v=e.target.checked;setAiCfg(function(c){return Object.assign({},c,{useLegacyKey:v});});}}),
             h("span",null,"Aktifkan mode legacy API key (transisi)")
           ),
-          aiCfg.useLegacyKey&&h("div",null,
+          activeProvider==="openai"&&h("div",{style:{fontSize:12,color:"#888",marginBottom:8}},"OpenAI wajib OAuth browser. Input API key manual dinonaktifkan."),
+          activeProvider!=="openai"&&aiCfg.useLegacyKey&&h("div",null,
             h("div",{style:{marginBottom:10}},
               h("input",{type:"password",placeholder:"API Key legacy (opsional)",value:aiCfg.apiKey||"",onChange:function(e){var v=e.target.value;setAiCfg(function(c){return Object.assign({},c,{apiKey:v});});}})
             ),
