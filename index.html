@@ -1034,36 +1034,29 @@ function App(){
   var activeAds=data.ads.filter(isActive);
   var activeTopLevel=activeCampaigns.length?activeCampaigns:activeAdsets.length?activeAdsets:activeAds;
 
-  var allItems=useMemo(function(){
-    return [].concat(activeCampaigns,activeAdsets,activeAds).map(function(c){
-      return Object.assign({},c,{_level:c.level||"campaign",_diag:diagnose(c,c.level||"campaign"),_alerts:checkTh(c,data.thresholds)});
-    });
-  },[data]);
+  var allItems=[].concat(activeCampaigns,activeAdsets,activeAds).map(function(c){
+    return Object.assign({},c,{_level:c.level||"campaign",_diag:diagnose(c,c.level||"campaign"),_alerts:checkTh(c,data.thresholds)});
+  });
 
   var urgentCount=allItems.filter(function(r){return r._diag[0].priority==="Urgent";}).length;
   var alertCount=allItems.filter(function(r){return r._alerts.length>0;}).length;
   var filtered=filterPri==="Semua"?allItems:allItems.filter(function(r){return r._diag[0].priority===filterPri;});
 
-  var periodeData=useMemo(function(){
-    if(!periodA||!periodB)return[];
-    return periodA.map(function(a){
-      var b=periodB.find(function(x){return x.name===a.name;});
-      if(!b)return null;
-      var ma=calcM(a),mb=calcM(b);
-      return{name:a.name.length>14?a.name.slice(0,14)+"...":a.name,roasA:ma.roas,roasB:mb.roas,roasDelta:pct(mb.roas,ma.roas),ctrA:ma.ctr,ctrB:mb.ctr,ctrDelta:pct(mb.ctr,ma.ctr),cpaA:ma.cpa,cpaB:mb.cpa,cpaDelta:pct(mb.cpa,ma.cpa)};
-    }).filter(Boolean);
-  },[periodA,periodB]);
+  var periodeData=(periodA&&periodB)?periodA.map(function(a){
+    var b=periodB.find(function(x){return x.name===a.name;});
+    if(!b)return null;
+    var ma=calcM(a),mb=calcM(b);
+    return{name:a.name.length>14?a.name.slice(0,14)+"...":a.name,roasA:ma.roas,roasB:mb.roas,roasDelta:pct(mb.roas,ma.roas),ctrA:ma.ctr,ctrB:mb.ctr,ctrDelta:pct(mb.ctr,ma.ctr),cpaA:ma.cpa,cpaB:mb.cpa,cpaDelta:pct(mb.cpa,ma.cpa)};
+  }).filter(Boolean):[];
 
   var totalSpend=activeTopLevel.reduce(function(s,c){return s+(Number(c.spend)||0);},0);
   var totalRevenue=activeTopLevel.reduce(function(s,c){return s+(Number(c.revenue)||0);},0);
   var overallRoas=totalSpend?totalRevenue/totalSpend:null;
 
-  var chartData=useMemo(function(){
-    return activeTopLevel.map(function(c){
-      var m=calcM(c);
-      return{name:c.name.length>14?c.name.slice(0,14)+"...":c.name,fullName:c.name,spend:m.spend,revenue:Number(c.revenue)||0,roas:m.roas?parseFloat(m.roas.toFixed(2)):0,ctr:m.ctr?parseFloat(m.ctr.toFixed(2)):0,cpa:Math.round(m.cpa||0),cpm:Math.round(m.cpm||0),impressions:Number(c.impressions)||0,results:Number(c.results)||0};
-    }).sort(function(a,b){return b.spend-a.spend;});
-  },[activeTopLevel]);
+  var chartData=activeTopLevel.map(function(c){
+    var m=calcM(c);
+    return{name:c.name.length>14?c.name.slice(0,14)+"...":c.name,fullName:c.name,spend:m.spend,revenue:Number(c.revenue)||0,roas:m.roas?parseFloat(m.roas.toFixed(2)):0,ctr:m.ctr?parseFloat(m.ctr.toFixed(2)):0,cpa:Math.round(m.cpa||0),cpm:Math.round(m.cpm||0),impressions:Number(c.impressions)||0,results:Number(c.results)||0};
+  }).sort(function(a,b){return b.spend-a.spend;});
 
   var metricOpts=[{key:"roas",label:"ROAS",color:"#1d9e75"},{key:"ctr",label:"CTR%",color:"#185fa5"},{key:"cpa",label:"CPA",color:"#ba7517"},{key:"spend",label:"Spend",color:"#534ab7"},{key:"cpm",label:"CPM",color:"#e24b4a"}];
   var selM=metricOpts.find(function(m){return m.key===analyticsMetric;})||metricOpts[0];
