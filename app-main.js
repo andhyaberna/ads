@@ -105,6 +105,11 @@ function canFallbackAuthToGas_(path){
   return !!authActionFromPath_(path);
 }
 
+function shouldDirectGasAuthFallback_(){
+  var host=(location.hostname||"").toLowerCase();
+  return host==="ads.cepat.top"&&!HAS_EXPLICIT_APIBASE;
+}
+
 function resolveAlternateAuthBase_(){
   var fromCfg=normApiBase(PUBLIC_AUTH_FALLBACK_API_BASE);
   if(!fromCfg)return "";
@@ -163,6 +168,16 @@ function authReq(path,payload,method){
     var clean=normApiBase(base);
     var url=(clean?clean:"")+relativePath;
     return fetch(url,opts).then(parseJsonResponse_);
+  }
+
+  if(authFallbackAllowed&&shouldDirectGasAuthFallback_()){
+    return callAuthViaGasFallback_(relativePath,payload).then(function(fallbackRes){
+      if(fallbackRes)return fallbackRes;
+      return {ok:false,error:"Route auth utama belum aktif dan fallback Apps Script tidak tersedia."};
+    }).catch(function(fallbackErr){
+      var msg=sanitizePublicError(fallbackErr&&fallbackErr.message?fallbackErr.message:"Auth request gagal");
+      return {ok:false,error:msg||"Auth request gagal"};
+    });
   }
 
   return callAuthAtBase_(primaryBase)
@@ -367,7 +382,7 @@ function detectApiBase(){
 }
 
 var APIBASE = detectApiBase();
-var HAS_EXPLICIT_APIBASE = (location.hostname||"").toLowerCase()==="ads.cepat.top"||!!normApiBase((function(){
+var HAS_EXPLICIT_APIBASE = !!normApiBase((function(){
   try{
     var q=new URLSearchParams(location.search||"");
     return q.get("api_base")||q.get("worker_url")||localStorage.getItem(APIBASEK)||"";
