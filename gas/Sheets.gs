@@ -3,6 +3,8 @@ var DB_TARGET_SHEET_ID = '1hbhtYLqzSIRlZoIiB0my-05tSIXdgAOjPbgpf7dJIEs';
 var DB_TARGET_SHEET_ID_OVERRIDE_ = '';
 var DB_READY_IN_PROGRESS_ = false;
 var DB_READY_DONE_ = false;
+var DB_SPREADSHEET_CACHE_ = null;
+var DB_SPREADSHEET_CACHE_ID_ = '';
 
 var SHEETS = {
   campaigns: ['id','import_batch_id','period_label','campaign_name','spend','impressions','ctr','results','revenue','roas','cpm','reach','freq','atc','cpa','date_start','date_end','created_at'],
@@ -62,9 +64,14 @@ function getOrCreateSpreadsheet_() {
   if (!configuredId) {
     throw new Error('DB_SHEET_ID tidak dikonfigurasi');
   }
+  if (DB_SPREADSHEET_CACHE_ && DB_SPREADSHEET_CACHE_ID_ === configuredId) {
+    return DB_SPREADSHEET_CACHE_;
+  }
 
   try {
-    return SpreadsheetApp.openById(configuredId);
+    DB_SPREADSHEET_CACHE_ = SpreadsheetApp.openById(configuredId);
+    DB_SPREADSHEET_CACHE_ID_ = configuredId;
+    return DB_SPREADSHEET_CACHE_;
   } catch (err2) {
     throw new Error('Gagal akses Google Sheets target. Pastikan ID benar dan Apps Script punya akses: ' + configuredId);
   }
@@ -75,10 +82,13 @@ function setDbTargetSheetIdOverride_(sheetId) {
   if (!clean) return;
   DB_TARGET_SHEET_ID_OVERRIDE_ = clean;
   DB_READY_DONE_ = false;
+  DB_SPREADSHEET_CACHE_ = null;
+  DB_SPREADSHEET_CACHE_ID_ = '';
 }
 
 function getSheetRows_(sheetName) {
-  var ss = ensureDbReady();
+  // Hot-path reads skip schema sync and reuse the opened spreadsheet for this execution.
+  var ss = getOrCreateSpreadsheet_();
   var sh = ss.getSheetByName(sheetName);
   if (!sh || sh.getLastRow() < 2) return [];
   var headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
