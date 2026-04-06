@@ -139,7 +139,7 @@ function apiImportCsv_(payload) {
       parsed = parseCsvImport_(csvText, level, fileName, periodLabel);
     }
   } catch (parseErr) {
-    appendRows_('import_logs', [{
+    appendImportLog_({
       import_batch_id: batchId,
       level: level,
       file_name: fileName,
@@ -147,13 +147,13 @@ function apiImportCsv_(payload) {
       imported_at: now,
       status: 'failed',
       message: parseErr.message || String(parseErr)
-    }]);
+    });
     return { ok: false, error: 'Gagal parsing file import: ' + (parseErr.message || String(parseErr)) };
   }
 
   var rows = parsed.rows;
   if (!rows.length) {
-    appendRows_('import_logs', [{
+    appendImportLog_({
       import_batch_id: batchId,
       level: level,
       file_name: fileName,
@@ -161,7 +161,7 @@ function apiImportCsv_(payload) {
       imported_at: now,
       status: 'failed',
       message: 'Tidak ada data valid yang bisa diimport'
-    }]);
+    });
     return { ok: false, error: 'Tidak ada data valid yang bisa diimport. Cek header/isi file.' };
   }
 
@@ -176,7 +176,7 @@ function apiImportCsv_(payload) {
   });
 
   appendRows_(target, normalized);
-  appendRows_('import_logs', [{
+  appendImportLog_({
     import_batch_id: batchId,
     level: level,
     file_name: fileName,
@@ -184,7 +184,7 @@ function apiImportCsv_(payload) {
     imported_at: now,
     status: 'success',
     message: (parsed.warnings || []).join('; ')
-  }]);
+  });
 
   return {
     ok: true,
@@ -194,8 +194,17 @@ function apiImportCsv_(payload) {
   };
 }
 
+function shouldWriteImportLogs_() {
+  var raw = String(getScriptConfig_('ENABLE_IMPORT_LOG_SHEET', 'false') || 'false').toLowerCase();
+  return raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on';
+}
+
+function appendImportLog_(entry) {
+  if (!shouldWriteImportLogs_()) return;
+  appendRows_('import_logs', [entry]);
+}
+
 function apiGetSnapshot_() {
-  ensureDbReady();
   var campaigns = getSheetRows_('campaigns').filter(function (r) { return !isEntityRowOff_(r); });
   var adsets = getSheetRows_('adsets').filter(function (r) { return !isEntityRowOff_(r); });
   var ads = getSheetRows_('ads').filter(function (r) { return !isEntityRowOff_(r); });
@@ -242,7 +251,7 @@ function apiGetSnapshot_() {
     thresholds: thresholds,
     notes: notes,
     settings: settings,
-    import_logs: getSheetRows_('import_logs')
+    import_logs: []
   };
 }
 

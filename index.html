@@ -1289,7 +1289,6 @@ function App(){
     setCurrentUser(user);
     setAuthToken(token);
     setIsLoggedIn(true);
-    loadLiveSnapshot(true);
   }
   
   function handleLogout(){
@@ -1329,7 +1328,7 @@ function App(){
   useEffect(function(){sd(data);},[data]);
   useEffect(function(){saicfg(aiCfg);},[aiCfg]);
   useEffect(function(){saveAiAuth(aiAuth);},[aiAuth]);
-  useEffect(function(){if(isLoggedIn)loadLiveSnapshot(true);},[isLoggedIn]);
+  useEffect(function(){if(isLoggedIn&&!authChecking)loadLiveSnapshot(true);},[isLoggedIn,authChecking]);
   useEffect(function(){
     var oauthResult=readOauthResultFromUrl_();
     if(!oauthResult||oauthResult.provider!=="openai")return;
