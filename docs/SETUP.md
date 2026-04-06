@@ -109,6 +109,10 @@ Kebutuhan user:
    wrangler deploy
    ```
 
+6. Routing domain production direkomendasikan memakai catch-all:
+   - `ads.cepat.top/*` -> Worker `ads`
+   - Hindari route parsial saja (`/auth/*`, `/app/*`) karena dapat menyebabkan `404 /app-main.js`.
+
 ---
 
 ## 6) Cara Menghubungkan Apps Script ↔ Worker

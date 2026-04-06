@@ -12,6 +12,15 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders });
     }
 
+    if (request.method === 'GET' || request.method === 'HEAD') {
+      const staticRes = await tryServeStaticAsset_(request, env, corsHeaders);
+      if (staticRes) return staticRes;
+    }
+
+    if (path === '/app-main.js' && request.method === 'GET') {
+      return serveFrontendScript_(env, corsHeaders);
+    }
+
     if (path === '/health') {
       return json({ ok: true, worker: 'ads', ts: Date.now() }, 200, corsHeaders);
     }
@@ -284,7 +293,8 @@ function isAllowedOrigin(request, env) {
 
 function checkToken(request, env) {
   const token = request.headers.get('x-internal-token') || '';
-  return !!token && token === env.INTERNAL_TOKEN;
+  const expected = String(env.INTERNAL_TOKEN || env.INTERNAL_API_TOKEN || '').trim();
+  return !!token && !!expected && token === expected;
 }
 
 async function verifyInternalRequest(request, env, rawBody) {
@@ -295,7 +305,7 @@ async function verifyInternalRequest(request, env, rawBody) {
   const ts = request.headers.get('x-ts') || '';
   const nonce = request.headers.get('x-nonce') || '';
   const sig = request.headers.get('x-signature') || '';
-  const secret = env.SIGNING_SECRET || env.INTERNAL_TOKEN;
+  const secret = env.SIGNING_SECRET || env.INTERNAL_TOKEN || env.INTERNAL_API_TOKEN;
   if (!ts || !nonce || !sig || !secret) {
     return { ok: false, error: 'Missing signed headers' };
   }
@@ -473,7 +483,7 @@ async function handleAppAi(request, env, corsHeaders) {
 
 async function callGasAction_(action, payload, env) {
   const urls = resolveGasUrls_(env);
-  const token = String(env.INTERNAL_API_TOKEN || '').trim();
+  const token = resolveInternalApiToken_(env);
   if (!urls.length) {
     return { ok: false, status: 500, error: 'Gateway not configured' };
   }
@@ -546,31 +556,70 @@ function resolveGasUrls_(env) {
   return list;
 }
 
+function resolveInternalApiToken_(env) {
+  return String(env.INTERNAL_API_TOKEN || env.INTERNAL_TOKEN || '').trim();
+}
+
 async function checkUpstreamHealth_(env) {
   const urls = resolveGasUrls_(env);
+  const token = resolveInternalApiToken_(env);
+  const sheetId = String(env.DB_TARGET_SHEET_ID || '').trim();
   if (!urls.length) {
-    return { ok: false, error: 'GAS url not configured', urls: [] };
+    return {
+      ok: false,
+      error: 'GAS url not configured',
+      token_configured: !!token,
+      sheet_id_configured: !!sheetId,
+      urls: []
+    };
   }
 
   const checks = [];
   for (let i = 0; i < urls.length; i++) {
     const url = urls[i];
+    const probeBody = { action: 'snapshot' };
+    if (token) probeBody.internal_token = token;
+    if (sheetId) probeBody.db_target_sheet_id = sheetId;
     try {
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'verify_token', auth_token: 'health_probe' })
+        body: JSON.stringify(probeBody)
       });
-      checks.push({ url, status: res.status, ok: true });
-      if (res.status > 0) {
-        return { ok: true, checks };
+      const text = await res.text();
+      let parsed = {};
+      try {
+        parsed = text ? JSON.parse(text) : {};
+      } catch (err) {
+        parsed = { ok: false, error: 'Invalid upstream JSON' };
+      }
+      const upstreamOk = !!(res.ok && parsed && parsed.ok === true);
+      checks.push({
+        url,
+        status: res.status,
+        ok: upstreamOk,
+        error: parsed && parsed.ok === false ? String(parsed.error || 'Request failed') : ''
+      });
+      if (upstreamOk) {
+        return {
+          ok: true,
+          token_configured: !!token,
+          sheet_id_configured: !!sheetId,
+          checks
+        };
       }
     } catch (err) {
       checks.push({ url, ok: false, error: String(err && err.message ? err.message : err) });
     }
   }
 
-  return { ok: false, error: 'all upstream attempts failed', checks };
+  return {
+    ok: false,
+    error: 'all upstream attempts failed',
+    token_configured: !!token,
+    sheet_id_configured: !!sheetId,
+    checks
+  };
 }
 
 async function serveFrontend_(env, corsHeaders) {
@@ -594,7 +643,8 @@ async function serveFrontend_(env, corsHeaders) {
     }
 
     const html = await res.text();
-    return new Response(html, {
+    const body = injectPublicRuntimeConfig_(html, env);
+    return new Response(body, {
       status: 200,
       headers: {
         ...corsHeaders,
@@ -606,6 +656,89 @@ async function serveFrontend_(env, corsHeaders) {
     return json({ ok: false, error: 'Frontend unavailable' }, 502, corsHeaders);
   } finally {
     if (timer) clearTimeout(timer);
+  }
+}
+
+async function serveFrontendScript_(env, corsHeaders) {
+  const defaultScriptUrl = 'https://raw.githubusercontent.com/andhyaberna/ads/main/app-main.js';
+  const scriptUrl = String(env.FRONTEND_APP_MAIN_URL || defaultScriptUrl).trim();
+  let timer = null;
+  try {
+    const timeoutMs = Number(env.FRONTEND_FETCH_TIMEOUT_MS || 12000);
+    const ctrl = new AbortController();
+    timer = setTimeout(() => ctrl.abort('frontend-js-timeout'), timeoutMs);
+    const res = await fetch(scriptUrl, {
+      method: 'GET',
+      signal: ctrl.signal,
+      headers: {
+        'user-agent': 'ads-worker-frontend-proxy'
+      }
+    });
+
+    if (!res.ok) {
+      return json({ ok: false, error: 'Frontend script unavailable' }, 502, corsHeaders);
+    }
+
+    const js = await res.text();
+    return new Response(js, {
+      status: 200,
+      headers: {
+        ...corsHeaders,
+        'content-type': 'application/javascript; charset=utf-8',
+        'cache-control': 'no-store'
+      }
+    });
+  } catch (err) {
+    return json({ ok: false, error: 'Frontend script unavailable' }, 502, corsHeaders);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function buildPublicRuntimeConfig_(env) {
+  const cfg = {};
+  const gasWebAppUrl = String(env.GAS_WEB_APP_URL || '').trim();
+  const dbTargetSheetId = String(env.DB_TARGET_SHEET_ID || '').trim();
+  const authFallbackApiBase = String(env.PUBLIC_AUTH_FALLBACK_API_BASE || '').trim();
+
+  if (gasWebAppUrl) cfg.gasWebAppUrl = gasWebAppUrl;
+  if (dbTargetSheetId) cfg.dbTargetSheetId = dbTargetSheetId;
+  if (authFallbackApiBase) cfg.authFallbackApiBase = authFallbackApiBase;
+
+  return cfg;
+}
+
+function injectPublicRuntimeConfig_(html, env) {
+  const source = String(html || '');
+  const cfg = buildPublicRuntimeConfig_(env);
+  const payload = JSON.stringify(cfg);
+  const tag = `<script>window.__MATIQ_PUBLIC_CONFIG__=${payload};</script>`;
+
+  if (source.indexOf('__MATIQ_PUBLIC_CONFIG__') >= 0) {
+    return source;
+  }
+  if (source.indexOf('</head>') >= 0) {
+    return source.replace('</head>', `${tag}</head>`);
+  }
+  return `${tag}${source}`;
+}
+
+async function tryServeStaticAsset_(request, env, corsHeaders) {
+  if (!env || !env.ASSETS || typeof env.ASSETS.fetch !== 'function') return null;
+  try {
+    const res = await env.ASSETS.fetch(request);
+    if (!res || res.status === 404) return null;
+    const headers = new Headers(res.headers || {});
+    headers.set('access-control-allow-origin', corsHeaders['access-control-allow-origin']);
+    headers.set('access-control-allow-methods', corsHeaders['access-control-allow-methods']);
+    headers.set('access-control-allow-headers', corsHeaders['access-control-allow-headers']);
+    return new Response(res.body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers
+    });
+  } catch (err) {
+    return null;
   }
 }
 

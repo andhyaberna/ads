@@ -110,12 +110,13 @@ wrangler deploy
 
 ## 4) Mapping route/domain Worker
 
-Pilihan A (direkomendasikan untuk mode simple): route di domain yang sama
+Pilihan A (direkomendasikan): route catch-all di domain yang sama
 
-- `ads.cepat.top/auth/*` -> Worker `ads`
-- `ads.cepat.top/user/*` -> Worker `ads`
-- `ads.cepat.top/admin/*` -> Worker `ads`
-- `ads.cepat.top/app/*` -> Worker `ads`
+- `ads.cepat.top/*` -> Worker `ads`
+
+Catatan penting:
+- Route parsial (`/auth/*`, `/app/*` saja) sering memicu error frontend `404 /app-main.js` karena file script utama tidak ikut diroute ke Worker.
+- Dengan catch-all, root page + static asset + endpoint API berjalan pada gateway yang sama.
 
 Pilihan B (domain API terpisah):
 
@@ -209,6 +210,17 @@ Solusi:
 2. Hard refresh (`Ctrl+F5`) / incognito.
 3. Pastikan Worker route benar-benar aktif untuk `/auth/*` di `ads.cepat.top`.
 4. Jika pakai subdomain API, pastikan DNS `api.ads.cepat.top` resolve dan `api.ads.cepat.top/health` status 200.
+
+### Error: `GET https://ads.cepat.top/app-main.js 404`
+
+Penyebab root cause yang paling umum:
+1. Route Worker hanya sebagian path (mis. `/auth/*`, `/app/*`) sehingga `/app-main.js` tidak pernah dilayani Worker.
+2. Halaman index dimuat dari upstream eksternal tetapi script `app-main.js` tidak ikut tersedia pada host aktif.
+
+Solusi:
+1. Gunakan route `ads.cepat.top/*` untuk Worker.
+2. Pastikan Worker dapat melayani static asset (`ASSETS`) atau fallback script frontend dari URL yang valid.
+3. Redeploy Worker, lalu hard refresh browser (`Ctrl+F5`).
 
 ### Snapshot terasa lambat walau route sudah benar
 
