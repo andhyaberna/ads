@@ -14,3 +14,5 @@ routes = [
 
 [vars]
 ALLOWED_ORIGIN = "https://ads.cepat.top"
+GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyEQM12lmuZ_Q7NrBC_OVEHXDHN49oLEe52GLuMbFbSiH3HSzz6PK1S7DULwnfuTp4U/exec"
+DB_TARGET_SHEET_ID = "1hbhtYLqzSIRlZoIiB0my-05tSIXdgAOjPbgpf7dJIEs"

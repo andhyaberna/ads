@@ -10,6 +10,9 @@ var AKCFG = "act_ai_cfg_v2";
 var AIAUTHK = "act_ai_auth_v1";
 var APIBASEK = "act_api_base_v1";
 var AUTHK = "act_auth_v1";
+var PUBLIC_RUNTIME_CFG = (typeof window!=="undefined"&&window.__MATIQ_PUBLIC_CONFIG__)||{};
+var PUBLIC_GAS_WEB_APP_URL = String(PUBLIC_RUNTIME_CFG.gasWebAppUrl||"https://script.google.com/macros/s/AKfycbyEQM12lmuZ_Q7NrBC_OVEHXDHN49oLEe52GLuMbFbSiH3HSzz6PK1S7DULwnfuTp4U/exec");
+var PUBLIC_DB_TARGET_SHEET_ID = String(PUBLIC_RUNTIME_CFG.dbTargetSheetId||"1hbhtYLqzSIRlZoIiB0my-05tSIXdgAOjPbgpf7dJIEs");
 var DEF = {campaigns:[],adsets:[],ads:[],notes:{},thresholds:{roas:{enabled:true,min:1.5,label:"ROAS min"},cpa:{enabled:false,max:150000,label:"CPA max"},ctr:{enabled:true,min:1,label:"CTR min %"},cpm:{enabled:false,max:60000,label:"CPM max"}}};
 var BRAND = {
   shortName:"MATIQ",
@@ -79,12 +82,42 @@ function getUserAccessLevel(){
 }
 
 function isAuthPath_(path){return /^\/auth\//.test(String(path||""));}
+function authActionFromPath_(path){
+  var clean=String(path||"").split("?")[0];
+  if(clean==="/auth/login")return "login";
+  if(clean==="/auth/register")return "register";
+  if(clean==="/auth/verify")return "verify_token";
+  if(clean==="/auth/create-first-admin")return "create_first_admin";
+  return "";
+}
 function parseJsonResponse_(res){
   return res.text().then(function(t){
     var j={};
     try{j=t?JSON.parse(t):{};}catch(e){j={ok:false,error:"Invalid server response"};}
     if(!res.ok&&!j.error)j.error="Request failed (HTTP "+res.status+")";
     j.__httpStatus=res.status;
+    return j;
+  });
+}
+
+function canFallbackAuthToGas_(path){
+  return !!authActionFromPath_(path);
+}
+
+function callAuthViaGasFallback_(path,payload){
+  var action=authActionFromPath_(path);
+  var gasUrl=normApiBase(PUBLIC_GAS_WEB_APP_URL);
+  if(!action||!gasUrl)return Promise.resolve(null);
+  var body=Object.assign({},payload||{},{action:action});
+  if(PUBLIC_DB_TARGET_SHEET_ID&&!body.db_target_sheet_id){
+    body.db_target_sheet_id=PUBLIC_DB_TARGET_SHEET_ID;
+  }
+  return fetch(gasUrl,{
+    method:"POST",
+    headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    body:JSON.stringify(body)
+  }).then(parseJsonResponse_).then(function(j){
+    if(j)j.__viaGasFallback=true;
     return j;
   });
 }
@@ -114,6 +147,7 @@ function authReq(path,payload,method){
     opts.body=JSON.stringify(payload);
   }
   var primaryBase=APIBASE||"";
+  var authFallbackAllowed=authRoute&&canFallbackAuthToGas_(relativePath);
 
   function callAuthAtBase_(base){
     var clean=normApiBase(base);
@@ -124,12 +158,32 @@ function authReq(path,payload,method){
   return callAuthAtBase_(primaryBase)
     .then(function(j){
       var status=Number(j&&j.__httpStatus||0);
+      if(authFallbackAllowed&&status===404){
+        return callAuthViaGasFallback_(relativePath,payload).then(function(fallbackRes){
+          if(fallbackRes)return fallbackRes;
+          j.error="Route auth utama belum aktif dan fallback Apps Script tidak tersedia.";
+          return j;
+        }).catch(function(fallbackErr){
+          var fallbackMsg=sanitizePublicError(fallbackErr&&fallbackErr.message?fallbackErr.message:"");
+          j.error="Route auth utama belum aktif dan fallback Apps Script gagal"+(fallbackMsg?": "+fallbackMsg:"")+".";
+          return j;
+        });
+      }
       if(authRoute && !j.ok && status===404){
         j.error="Route auth belum aktif di domain ini (/auth/* masih 404).";
       }
       return j;
     })
     .catch(function(err){
+      if(authFallbackAllowed){
+        return callAuthViaGasFallback_(relativePath,payload).then(function(fallbackRes){
+          if(fallbackRes)return fallbackRes;
+          return {ok:false,error:"Auth request gagal: fallback Apps Script tidak mengembalikan respons."};
+        }).catch(function(fallbackErr){
+          var msg=sanitizePublicError(fallbackErr&&fallbackErr.message?fallbackErr.message:(err&&err.message?err.message:"Auth request gagal"));
+          return {ok:false,error:msg};
+        });
+      }
       if(!authRoute)return {ok:false,error:err&&err.message?err.message:"Request gagal"};
       return {ok:false,error:err&&err.message?err.message:"Auth request gagal"};
     });
