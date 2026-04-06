@@ -23,12 +23,12 @@ MAX_IMPORT_XLSX_B64_BYTES = "12000000"
 
 [[kv_namespaces]]
 binding = "RATE_LIMIT_KV"
-id = "REPLACE_WITH_KV_ID"
+id = "002fc78144cc49959b2ca39810b78c72"
 
 [[kv_namespaces]]
 binding = "REPLAY_KV"
-id = "REPLACE_WITH_REPLAY_KV_ID"
+id = "96796ba2306e464da3faa801e92146e2"
 
 [[kv_namespaces]]
 binding = "AI_CACHE_KV"
-id = "REPLACE_WITH_AI_CACHE_KV_ID"
+id = "40b97c3ccf1d4cc685f97588c96bdbe7"
