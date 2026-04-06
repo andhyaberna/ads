@@ -951,7 +951,7 @@ function AccessDeniedPage(props){
 
 function AdminUserPanel(props){
   var authToken=props.authToken;
-  var adminApiReady=HAS_EXPLICIT_APIBASE||(location.hostname||"").toLowerCase()!=="ads.cepat.top";
+  var st0=useState((location.hostname||"").toLowerCase()!=="ads.cepat.top"||HAS_EXPLICIT_APIBASE),adminApiReady=st0[0],setAdminApiReady=st0[1];
   var st1=useState([]),users=st1[0],setUsers=st1[1];
   var st2=useState(false),loading=st2[0],setLoading=st2[1];
   var st3=useState(""),search=st3[0],setSearch=st3[1];
@@ -961,6 +961,17 @@ function AdminUserPanel(props){
   var st7=useState(null),stats=st7[0],setStats=st7[1];
   var st8=useState(""),msg=st8[0],setMsg=st8[1];
   var st9=useState(false),showCreate=st9[0],setShowCreate=st9[1];
+
+  useEffect(function(){
+    var host=(location.hostname||"").toLowerCase();
+    if(host!=="ads.cepat.top"||HAS_EXPLICIT_APIBASE){
+      setAdminApiReady(true);
+      return;
+    }
+    fetch(apiPath("/health"),{method:"GET"})
+      .then(function(res){setAdminApiReady(!!(res&&res.ok));})
+      .catch(function(){setAdminApiReady(false);});
+  },[]);
   
   useEffect(function(){if(authToken&&adminApiReady){loadUsers();loadStats();}},[authToken,adminApiReady]);
 
