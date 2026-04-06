@@ -13,7 +13,7 @@ var AUTHK = "act_auth_v1";
 var PUBLIC_RUNTIME_CFG = (typeof window!=="undefined"&&window.__MATIQ_PUBLIC_CONFIG__)||{};
 var PUBLIC_GAS_WEB_APP_URL = String(PUBLIC_RUNTIME_CFG.gasWebAppUrl||"https://script.google.com/macros/s/AKfycbyEQM12lmuZ_Q7NrBC_OVEHXDHN49oLEe52GLuMbFbSiH3HSzz6PK1S7DULwnfuTp4U/exec");
 var PUBLIC_DB_TARGET_SHEET_ID = String(PUBLIC_RUNTIME_CFG.dbTargetSheetId||"1hbhtYLqzSIRlZoIiB0my-05tSIXdgAOjPbgpf7dJIEs");
-var PUBLIC_AUTH_FALLBACK_API_BASE = String(PUBLIC_RUNTIME_CFG.authFallbackApiBase||"https://api.ads.cepat.top");
+var PUBLIC_AUTH_FALLBACK_API_BASE = String(PUBLIC_RUNTIME_CFG.authFallbackApiBase||"");
 var DEF = {campaigns:[],adsets:[],ads:[],notes:{},thresholds:{roas:{enabled:true,min:1.5,label:"ROAS min"},cpa:{enabled:false,max:150000,label:"CPA max"},ctr:{enabled:true,min:1,label:"CTR min %"},cpm:{enabled:false,max:60000,label:"CPM max"}}};
 var BRAND = {
   shortName:"MATIQ",
@@ -367,7 +367,7 @@ function detectApiBase(){
 }
 
 var APIBASE = detectApiBase();
-var HAS_EXPLICIT_APIBASE = (location.hostname||"").toLowerCase()==="ads.cepat.top"||!!normApiBase((function(){
+var HAS_EXPLICIT_APIBASE = !!normApiBase((function(){
   try{
     var q=new URLSearchParams(location.search||"");
     return q.get("api_base")||q.get("worker_url")||localStorage.getItem(APIBASEK)||"";
