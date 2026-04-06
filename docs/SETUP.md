@@ -31,7 +31,8 @@
    - notes
    - settings
    - import_logs
-4. Threshold default otomatis di-seed:
+4. Tab `import_logs` tetap dibuat untuk kebutuhan audit/debug, tetapi bisa dibiarkan kosong jika logging import dimatikan untuk performa.
+5. Threshold default otomatis di-seed:
    - roas | true | min | 1.5 | ROAS min
    - cpa | false | max | 150000 | CPA max
    - ctr | true | min | 1 | CTR min %
@@ -102,6 +103,7 @@ Kebutuhan user:
    - `ADMIN_EMAILS` = daftar email admin dipisah koma
    - `APP_ALLOWED_DOMAIN` = domain internal (contoh: `cepat.top`)
    - `INTERNAL_API_TOKEN` = token internal untuk endpoint action API
+   - `ENABLE_IMPORT_LOG_SHEET` = `false` untuk mode default cepat, `true` jika ingin menulis audit import ke sheet `import_logs`
 5. Deploy:
    ```bash
    wrangler deploy
@@ -176,6 +178,7 @@ Campaign contoh:
 - Import dilakukan terpisah per level (campaign/adset/ad)
 - Header CSV Meta Ads bisa campuran EN/ID sesuai mapping di `Parser.gs`
 - Untuk AI, keamanan bergantung pada penyimpanan token di settings + env Worker
+- Snapshot live sengaja tidak membawa isi `import_logs` untuk mengurangi latency render
 - MVP ini menargetkan internal tool, bukan high-scale public product
 
 ## 9) Baseline Keamanan Minimum

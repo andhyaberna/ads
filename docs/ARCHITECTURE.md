@@ -72,12 +72,18 @@ GET snapshot:
 { "ok": true, "data": { } }
 ```
 
+### Snapshot Payload
+
+- Snapshot dipakai sebagai hot-path untuk render dashboard/live frontend.
+- Payload utama berisi `kpi`, `entities`, `hierarchy`, `thresholds`, `notes`, dan `settings`.
+- `import_logs` sengaja tidak ikut dimuat penuh pada snapshot live untuk menurunkan overhead baca Google Sheets. Jika field ini muncul, nilainya kosong kecuali ada kebutuhan debug khusus.
+
 ## Data Flow Ringkas
 
 1. User upload CSV per level dari tab Import.
 2. UI kirim CSV text ke `uiImportCsv`.
 3. `Parser.gs` normalisasi header + parsing angka aman.
-4. `Sheets.gs` simpan ke `campaigns/adsets/ads` dan log ke `import_logs`.
+4. `Sheets.gs` simpan ke `campaigns/adsets/ads`; penulisan `import_logs` hanya aktif jika `ENABLE_IMPORT_LOG_SHEET=true`.
 5. Tab lain ambil `uiSnapshot` lalu render KPI/rekomendasi/alert/hierarki/analitik.
 6. Tab AI kirim pertanyaan ke `uiAskAi`.
 7. `Ai.gs` kirim ringkasan data ke Cloudflare Worker (`/ai/analyze`) dengan token internal.

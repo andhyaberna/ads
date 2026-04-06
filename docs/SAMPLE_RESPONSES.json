@@ -48,9 +48,13 @@
           "alerts": []
         }
       ],
+      "hierarchy": {},
       "thresholds": [
         { "metric_key": "roas", "enabled": "true", "rule_type": "min", "value": 1.5, "label": "ROAS min" }
-      ]
+      ],
+      "notes": [],
+      "settings": [],
+      "import_logs": []
     }
   },
   "compare_periods": {
