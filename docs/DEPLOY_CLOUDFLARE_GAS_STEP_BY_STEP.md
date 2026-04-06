@@ -63,6 +63,7 @@ Untuk login admin, profile user, dan manajemen user, route `/user/*` dan `/admin
    - `DB_TARGET_SHEET_ID=1hbhtYLqzSIRlZoIiB0my-05tSIXdgAOjPbgpf7dJIEs`
    - `AUTH_PASSWORD_MODE=PLAINTEXT` *(jika ingin akun dummy plaintext sesuai kebutuhan Anda)*
    - `INTERNAL_API_TOKEN=<token-internal-anda>` *(opsional untuk hardening tambahan)*
+   - `ENABLE_IMPORT_LOG_SHEET=false` *(opsional, default rekomendasi untuk mengurangi overhead import logging; aktifkan `true` saat butuh audit/debug import)*
 4. Deploy ulang sebagai Web App:
    - **Deploy -> Manage deployments -> Edit -> New version -> Deploy**
 5. Gunakan URL Web App aktif:
@@ -208,6 +209,17 @@ Solusi:
 2. Hard refresh (`Ctrl+F5`) / incognito.
 3. Pastikan Worker route benar-benar aktif untuk `/auth/*` di `ads.cepat.top`.
 4. Jika pakai subdomain API, pastikan DNS `api.ads.cepat.top` resolve dan `api.ads.cepat.top/health` status 200.
+
+### Snapshot terasa lambat walau route sudah benar
+
+Penyebab umum:
+- Apps Script masih menulis `import_logs` di setiap import padahal tidak dibutuhkan
+- Snapshot dipakai untuk live dashboard, tetapi spreadsheet target sangat besar
+
+Solusi:
+1. Pastikan Script Property `ENABLE_IMPORT_LOG_SHEET=false` jika tidak sedang debug import.
+2. Redeploy versi Apps Script terbaru agar snapshot tidak lagi memuat isi `import_logs`.
+3. Jalankan import/snapshot ulang lalu cek latency dari Worker `/app/snapshot`.
 
 ### Error: `INTERNAL_API_TOKEN not configured`
 

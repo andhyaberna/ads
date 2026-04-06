@@ -1344,10 +1344,10 @@ function App(){
   },[]);
 
   useEffect(function(){
-    if(!isLoggedIn)return;
+    if(!isLoggedIn||authChecking)return;
     if((aiCfg.provider||"").toLowerCase()!=="openai")return;
     verifyProviderSession("openai");
-  },[isLoggedIn,aiCfg.provider]);
+  },[isLoggedIn,authChecking,aiCfg.provider]);
   useEffect(function(){
     var title=BRAND.header;
     if(authChecking)title=brandPageTitle_("Loading");

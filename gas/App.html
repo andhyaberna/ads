@@ -116,10 +116,13 @@
 
       async function init(){
         renderTabs();
-        await gsr('uiBootstrap');
-        await loadSnapshot();
-        await loadAiConfig();
-        await loadSystemConfig();
+        // doGet() already ensures the spreadsheet schema before this HTML renders,
+        // so avoid a second bootstrap call on the initial UI hot-path.
+        await Promise.all([
+          loadSnapshot(),
+          loadAiConfig(),
+          loadSystemConfig()
+        ]);
         render();
       }
 
